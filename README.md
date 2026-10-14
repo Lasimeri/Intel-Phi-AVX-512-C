@@ -49,22 +49,10 @@ ported, the C library links the assembly module of
 [`host/asm/phi512`](host/asm/phi512/phi512.md) in its place, so the
 library runs end to end at every commit.
 
-Where things stand, measured on the rack on 2026-10-14:
-
-| path | what runs where | generation, BF16 Flash-Next |
-| --- | --- | --- |
-| the assembly preload (2c8ceb3), llama-bench, card 0, `-t 1` | every function with an AVX-512 instruction on a card | 0.0037 tok/s (273 s a token) |
-| the `libggml_phi.so` backend, llama.phi one engine: GPUs, host (`-t 12`) and four cards | GPUs: every block's non-expert weights and the experts of blocks 0 to 8 (`-ts 2/3/3/40`); host: the experts of blocks 9 to 47 (`-ot`); cards: a share of the host's multiplies, 4 whole experts a layer each (`PHI_GGML_EXPERTS`) | 13.14 and 13.36 tok/s (two rounds, 3 x 128 tokens each) |
-| the same engine without the cards (`-t 32`), run between those two | GPUs and host | 13.23 tok/s (3 x 128 tokens) |
-
-Decode is the same with and without the cards, within the noise (runs
-12.69 to 14.10 with them, 12.70 to 13.52 without; the thread counts
-differ and the no-card round's page cache never settled:
-`/mnt/raid5/phi/bench/setups-2026-10-14`). The rack's ~13 tok/s is the
-GPUs' and the host's. Without the GPUs the record has 5.38 tok/s on the
-host alone (32 threads) and 5.69 with the cards (2026-10-09), and
-`build-avx512f`, the preload's target, has no GPU backend
-(`GGML_CUDA` off).
+Where things stand, measured on the rack on 2026-10-14: the section
+[Benchmarks with the Phis](#benchmarks-with-the-phis-2026-10-14) below
+(the backend about 13.2 tok/s with all four cards and without them; the
+assembly preload 0.0037 tok/s).
 
 The person's direction for the C version (2026-10-14): `mul_mat` and
 `mul_mat_id` on the four cards against weights kept resident there,
@@ -73,7 +61,7 @@ at least 12 tok/s generation. The reason: about 6,900 card round trips a
 token for graph building alone, at 38 to 48 us each at least, keep a
 preload that sends every region to a card under 3 tok/s (arithmetic).
 Nothing measured yet shows 12 tok/s on this machine without the GPUs
-(the numbers above); how the split reaches it is open.
+(the benchmarks below); how the split reaches it is open.
 
 ```
 make -C host/c && make -C host/c check      # libphi512-c.so and its checks (on the rack)
@@ -91,8 +79,50 @@ Status of the C version (2026-10-14):
 | the translator (`decode`, `fnscan`, `mvex`, `xlate`, `blob`) | still assembly; planned: each port with an offline check comparing the assembly and C blobs of every function of `libggml-cpu`, `libggml-base` and `libm` (not written yet) |
 | the split (heavy ops on the cards, the rest native) | not started |
 
-The sections below describe the assembly modules the C library still
+After the benchmarks, the sections describe the assembly modules the C library still
 links (the restart of 2026-10-13 and 14), the backend, and the layout.
+
+## Benchmarks with the Phis (2026-10-14)
+
+Measured on the rack (EPYC 7742, four 20 GB GPUs, four Xeon Phi 3120A)
+with llama.phi and the BF16 Qwen3.8 Flash-Next (329.71 GiB, larger than
+RAM). The full record, setup and raw data:
+[`docs/results/2026-10-14-phis-with-and-without.md`](docs/results/2026-10-14-phis-with-and-without.md).
+
+**The `libggml_phi.so` backend, one engine (GPUs, host, cards),**
+interleaved with all four cards (`PHI_GGML_CARDS=0,1,2,3`) and without them; 3 decodes of 128 tokens a
+round, greedy:
+
+| round (in order) | decode runs, tok/s | decode | prefill (8008 tokens) | card requests, 384 tokens |
+| --- | --- | --- | --- | --- |
+| with the four cards, `-t 12` | 13.45, 12.69, 13.27 | **13.14** | 119.7 tok/s | 8680 to 9386 a card, 0 errors, 0.165 to 0.176 ms each |
+| without the cards, `-t 32` | 13.52, 12.70, 13.48 | **13.23** | 98.9 tok/s | none |
+| with the four cards, `-t 12` | 13.24, 12.73, 14.10 | **13.36** | 117.4 tok/s | the same |
+
+Decode is the same with and without the cards, within the noise: the
+~13 tok/s is the GPUs' and the host's. The cards hold 4 whole experts a
+layer each and answer about 23 requests a token, about 4 ms of a 76 ms
+token (arithmetic). Confounds: the thread counts differ (phi-serve's
+defaults), and the no-card round's page cache never settled (40,000 to
+100,000 major faults a decode, against about 1,000 with the cards).
+Without the GPUs the record has 5.38 tok/s on the host alone and 5.69
+with the cards (2026-10-09).
+
+**The intercept preload** on the same model (llama-bench; its regions on card 0 only, one
+host thread, `-ngl 0`), the assembly library at 2c8ceb3: prompt 0.0078
+tok/s (4 tokens in 511 s), generation 0.0037 tok/s (273 s a token).
+The C library (`host/c`) has not been benchmarked on the cards yet: it
+is `main.c` plus the same assembly modules, and production held all four
+cards. Its runs use `scripts/bench/lb-run.sh` and
+[`scripts/gates.sh`](scripts/gates.md) once a card is free.
+
+Reproduce the backend series (it stops and starts the engine on port
+8001 three times):
+
+```
+cd /mnt/raid5/phi/bench && ./bench-setups-2026-10-14.sh one-cards-1 one-nocards-1 one-cards-2
+cat setups-2026-10-14/summary.txt
+```
 
 ## The assembly restart (2026-10-13 and 14)
 
