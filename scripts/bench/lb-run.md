@@ -10,6 +10,6 @@ per second. With a terminal it waits for Enter before closing.
 
 Baseline (the assembly preload at 2c8ceb3, card 0, 2026-10-14): pp4
 0.0078 tok/s (511 s), tg2 0.0037 tok/s (547 s, 273 s a token). The
-backend path (libggml_phi.so, not this preload) on the same model with
-GPUs and cards: 13.14 tok/s decode (2026-10-14 one-cards-1,
-`/mnt/raid5/phi/bench/setups-2026-10-14`).
+backend path (libggml_phi.so, not this preload) on the same model, one
+engine with GPUs, host and cards: 13.14 and 13.36 tok/s decode, and 13.23
+without the cards (2026-10-14, `/mnt/raid5/phi/bench/setups-2026-10-14`).

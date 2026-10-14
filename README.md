@@ -52,7 +52,17 @@ Where things stand, measured on the rack on 2026-10-14:
 | path | what runs where | generation, BF16 Flash-Next |
 | --- | --- | --- |
 | the assembly preload (2c8ceb3), llama-bench, card 0, `-t 1` | every function with an AVX-512 instruction on a card | 0.0037 tok/s (273 s a token) |
-| the `libggml_phi.so` backend, llama.phi one engine, GPUs, host (`-t 12`) and four cards | the backend's offloaded multiplies on the cards | 13.14 tok/s (3 x 128 tokens, `setups-2026-10-14/one-cards-1`) |
+| the `libggml_phi.so` backend, llama.phi one engine: GPUs, host (`-t 12`) and four cards | GPUs: every block's non-expert weights and the experts of blocks 0 to 8 (`-ts 2/3/3/40`); host: the experts of blocks 9 to 47 (`-ot`); cards: a share of the host's multiplies, 4 whole experts a layer each (`PHI_GGML_EXPERTS`) | 13.14 and 13.36 tok/s (two rounds, 3 x 128 tokens each) |
+| the same engine without the cards (`-t 32`), run between those two | GPUs and host | 13.23 tok/s (3 x 128 tokens) |
+
+Decode is the same with and without the cards, within the noise (runs
+12.69 to 14.10 with them, 12.70 to 13.52 without; the thread counts
+differ and the no-card round's page cache never settled:
+`/mnt/raid5/phi/bench/setups-2026-10-14`). The rack's ~13 tok/s is the
+GPUs' and the host's. Without the GPUs the record has 5.38 tok/s on the
+host alone (32 threads) and 5.69 with the cards (2026-10-09), and
+`build-avx512f`, the preload's target, has no GPU backend
+(`GGML_CUDA` off).
 
 The person's direction for the C version (2026-10-14): `mul_mat` and
 `mul_mat_id` on the four cards against weights kept resident there,

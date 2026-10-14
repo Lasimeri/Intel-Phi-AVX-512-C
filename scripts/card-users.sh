@@ -9,6 +9,9 @@ for c in "$@"; do
     for p in /proc/[0-9]*; do
         pid=${p#/proc/}
         [ "$pid" = $$ ] && continue
+        # The stack's card daemon and its monitor map every window for good and
+        # send the worker no requests.
+        case $(cat "$p/comm" 2>/dev/null) in phictl|phitop) continue ;; esac
         if grep -qs " $w\$" "$p/maps"; then
             echo "card $c: pid $pid $(tr '\0' ' ' < "$p/cmdline" 2>/dev/null | cut -c1-120)"
             found=0

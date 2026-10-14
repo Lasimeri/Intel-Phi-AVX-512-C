@@ -21,9 +21,12 @@ weights kept resident there, spread over each card's threads; graph
 building and the small ops run on the EPYC through the AVX2 twin
 (`build-phi512-cpu`, the same source built for AVX2). The target is the
 plan's stage 4: at least 12 tok/s generation on the BF16 Flash-Next. For
-scale, the same machine with the `libggml_phi.so` backend (GPUs, host and
-cards) measured 13.14 tok/s generation on 2026-10-14
-(`/mnt/raid5/phi/bench/setups-2026-10-14`).
+scale, the same machine with the `libggml_phi.so` backend measured 13.14
+and 13.36 tok/s generation with GPUs, host and cards, and 13.23 without
+the cards (2026-10-14, `/mnt/raid5/phi/bench/setups-2026-10-14`): that
+speed is the GPUs' and the host's. `build-avx512f` has no GPU backend;
+without GPUs the record has 5.38 tok/s (host, 32 threads) and 5.69 (host
+and cards, 2026-10-09).
 
 ## Layout
 
