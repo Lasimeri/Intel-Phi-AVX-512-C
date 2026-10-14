@@ -7,8 +7,8 @@ AVX-512 instruction it reaches is carried, with the code around it, to
 the card's vector units and executed there as MVEX, the card's own
 encoding of the same operations. Nothing is interpreted. Results are
 bit-identical to what real AVX-512 hardware produces, on everything the
-tests here cover. The repository is being rewritten in place, in
-assembly, since 2026-10-13 (the section "The restart" below; the plan's
+tests here cover. The preload is being rewritten in C since 2026-10-14
+(the next section), after the assembly restart of 2026-10-13 (the section "The restart" below; the plan's
 stages and gates are in the dated records under `docs/results`).
 
 ```
@@ -36,6 +36,39 @@ The time is the requests' latency, not the cards' work: the 65536
 polynomial call spends 0.9 ms making memory resident, 1.3 ms in the run
 of which the cards compute for 33 us, 0.2 ms fetching the result
 ([`docs/results/2026-10-13-preload-seamless-fast.md`](docs/results/2026-10-13-preload-seamless-fast.md)).
+
+## This repository: the C version (2026-10-14)
+
+This is Intel-Phi-AVX-512-C, the C twin of
+[Intel-Phi-AVX-512-ASM](https://github.com/Lasimeri/Intel-Phi-AVX-512-ASM)
+(frozen at 3ee445c, the history shared up to there). The preload is
+being written in C under [`host/c`](host/c/README.md); until a module is
+ported, the C library links the assembly module of
+[`host/asm/phi512`](host/asm/phi512/phi512.md) in its place, so the
+library runs end to end at every commit.
+
+Where things stand, measured on the rack on 2026-10-14:
+
+| path | what runs where | generation, BF16 Flash-Next |
+| --- | --- | --- |
+| the assembly preload (2c8ceb3), llama-bench, card 0, `-t 1` | every function with an AVX-512 instruction on a card | 0.0037 tok/s (273 s a token) |
+| the `libggml_phi.so` backend, llama.phi one engine, GPUs, host (`-t 12`) and four cards | the backend's offloaded multiplies on the cards | 13.14 tok/s (3 x 128 tokens, `setups-2026-10-14/one-cards-1`) |
+
+The person's direction for the C version (2026-10-14): `mul_mat` and
+`mul_mat_id` on the four cards against weights kept resident there,
+everything else native on the host through the AVX2 twin build; target
+at least 12 tok/s generation. The reason: about 6,900 card round trips a
+token for graph building alone, at 38 to 48 us each at least, keep a
+preload that sends every region to a card under 3 tok/s (arithmetic).
+
+```
+make -C host/c && make -C host/c check      # libphi512-c.so and its checks (on the rack)
+scripts/gates.sh                            # the regression gates on card 0 (scripts/gates.md)
+scripts/bench/lb-run.sh lb1 4 2             # llama-bench under it (scripts/bench/README.md)
+```
+
+The rest of this README describes the repository as the assembly
+restart left it on 2026-10-13.
 
 ## The restart (2026-10-13)
 

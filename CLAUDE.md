@@ -1,32 +1,42 @@
-# Intel-Phi-AVX512: notes for an agent working here
+# Intel-Phi-AVX-512-C: notes for an agent working here
 
 Read `CONTRIBUTING.md` first; it is the authority. The non-obvious rules:
 
-- What this is: the Xeon Phi cards as an AVX-512 co-processor (phi512, the
-  card worker, the `libggml_phi.so` ggml backend). It needs the cards'
-  stack, Intel-Phi-3120A, found at run time (`PHI_STACK_ROOT`, `phi` on
-  PATH, a checkout next to this one or in `$HOME`, under either name);
-  never copy the stack here (the one copy: `knc-mvex`'s library, kept
-  identical to the stack's by `make mvex-check`). Intel-Phi-Jev consumes
-  `scripts/phi512.sh`, `scripts/phi-vpu.sh`,
-  `host/target/release/libggml_phi.so` and the `PHI_GGML_*` /
-  `PHI_VPU_*` variables, Intel-Phi-Stream `scripts/phi-ggml.sh` and the
-  same library: add, do not rename.
-- Rust on the host for what is not yet ported. The card worker
-  (`card/vpu`) and the ggml backend (`host/asm/ggml-phi`,
-  `host/asm/common`) are assembly: GNU `as` on the host, no libc, the
-  card binary audited for what Knights Corner runs, layouts from `tcc`
-  checkers never by hand (`host/asm/README.md`). C only for the card's
-  protocol headers (`card/vpu/*.h`), the card examples and the
-  `tcc`-compiled layout helpers. No Python or JavaScript, ever.
+- What this is: the Xeon Phi cards as an AVX-512 co-processor, with the
+  intercept preload written in C (`host/c`, `libphi512-c.so`;
+  `host/c/README.md` is its guide). The assembly preload
+  (`host/asm/phi512`, `libphi512-asm.so`) stays as the reference and as
+  the modules not yet ported, linked into the C library (the hybrid
+  build). Its own repository, Intel-Phi-AVX-512-ASM, is frozen at
+  3ee445c; development, the card worker (`card/vpu`) and its deploys
+  continue here. Production inference is the ggml backend
+  (`host/asm/ggml-phi`, `libggml_phi.so`, through llama.phi's
+  `scripts/phi-serve.sh`), not the preload.
+- The direction (the person, 2026-10-14): heavy ops (`mul_mat`,
+  `mul_mat_id`) on the four cards against resident weights, everything
+  else native on the host through the AVX2 twin build; target at least
+  12 tok/s generation on the BF16 Qwen3.8 Flash-Next. The target program
+  is llama.phi's `build-avx512f` with that model: no stand-in programs,
+  smaller models or simulations.
+- Everything runs on the GPU rack: builds (`-j128`), tests, card work.
+  The working copy is `/mnt/raid5/phi/Intel Phi AVX-512 C` (alias
+  `~/.cache/intel-phi-avx512-c`); a desktop clone only relays pushes.
+  `make` and `LD_PRELOAD` cannot take the spaces in that path: the
+  Makefiles use relative paths, the scripts copy libraries elsewhere.
+- C (gcc) for the preload, assembly for the card worker, Rust only for
+  what is not ported yet, shell for scripts; never Python, JavaScript or
+  Perl, not even for a one-line edit.
 - Every code file gets a sibling `.md` with the same stem, written in the
-  same change. No em or en dashes anywhere. A sibling repository's file is
-  a GitHub link, not a bare path.
-- Every hardware claim cites a source: Intel document and section, source
-  tree, file and function, or a measurement with its command. This host
-  drifts a quarter over tens of minutes: interleave, and benchmark the
-  split with `-t 12`, not 16.
-- `make check` before committing, push after.
-- Traps: one backend process at a time may hold the cards (the backend
-  frees every card's uploads when it opens); `pkill -f` from a tool shell
-  can kill the shell itself (kill by pid).
+  same change. No em or en dashes anywhere. Every hardware claim cites a
+  source: Intel document and section, source file and function, or a
+  measurement with its command.
+- `make -j128 check LLAMA_CPP_DIR=/mnt/raid5/phi/llama.phi` before every
+  commit; a failed check stops the commit. `scripts/gates.sh` (card
+  gates) is separate: it restarts a card worker and refuses while
+  production holds the card (`scripts/card-users.sh`).
+- The cards: one program at a time per card. Production's
+  `llama-server` maps all four windows; stop it before gates or bench
+  runs of the preload, and say so.
+- Traps: `pkill -f` from a tool shell can kill the shell itself (kill by
+  pid); a host crash under the preload is only in the kernel journal; the
+  host drifts a quarter over tens of minutes (interleave A/B runs).

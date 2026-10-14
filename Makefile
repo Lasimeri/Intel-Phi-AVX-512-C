@@ -1,4 +1,5 @@
-# Top-level entry points. The real work is in scripts/ and in the Cargo
+# Top-level entry points. The real work is in scripts/, host/c (the C
+# preload, its own Makefile) and in the Cargo
 # workspace under host/. Run `make help` for the list.
 
 .DEFAULT_GOAL := help
@@ -14,7 +15,7 @@ export LLAMA_CPP_DIR LLAMA_BUILD_DIR
 PLD := $(if $(and $(wildcard $(LLAMA_CPP_DIR)/include/llama.h),$(wildcard $(LLAMA_BUILD_DIR)/libllama.so)),--workspace,)
 PLD_NOTE = $(if $(PLD),,@echo "phi-pld skipped: no $(if $(wildcard $(LLAMA_CPP_DIR)/include/llama.h),$(LLAMA_BUILD_DIR)/libllama.so (set LLAMA_BUILD_DIR),$(LLAMA_CPP_DIR)/include/llama.h (set LLAMA_CPP_DIR))")
 
-.PHONY: help build test fmt clippy docs-check layout-check mvex-check check clean
+.PHONY: help build test fmt clippy docs-check layout-check mvex-check check c c-check gates clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
@@ -61,8 +62,18 @@ fnscan-check: decode-check ## The function scan (host/asm/phi512/fnscan.S) over 
 	@tail -1 host/asm/out/fnscan.txt
 	@if tail -1 host/asm/out/fnscan.txt | grep -q "failed 0 badtarget 0 "; then echo "fnscan-check: ok"; else echo "fnscan-check: failures"; exit 1; fi
 
-check: docs-check fmt clippy build test layout-check mvex-check decode-check fnscan-check ## Everything CI would run
+c: ## Build the C preload: host/c/out/libphi512-c.so (C_MODULES in C, the rest assembly; host/c/README.md)
+	$(MAKE) -C host/c
+
+c-check: ## The C preload's checks: the build, no AVX-512 from C, the imports, clang-format, clang-tidy
+	$(MAKE) -C host/c check
+
+gates: c ## The card gates through the C preload (restarts a card worker; not in check): GATES_ARGS="--card N --lib PATH --only ..."
+	scripts/gates.sh $(GATES_ARGS)
+
+check: docs-check fmt clippy build test layout-check mvex-check decode-check fnscan-check c-check ## Everything CI would run
 
 clean: ## Remove build outputs
 	cd $(HOST) && cargo clean
 	rm -rf host/asm/out
+	$(MAKE) -C host/c clean

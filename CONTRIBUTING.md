@@ -7,26 +7,28 @@ sections are the same in every repository of the family (see
 
 ## Languages
 
-- **Rust** for everything that can be Rust: all host-side software and all
-  tooling that runs on the host.
-- **Assembly** for the card worker (`card/vpu`) and the ggml backend
-  (`host/asm/ggml-phi` with `host/asm/common`): x86-64 GNU `as`, no
-  libc, the card's vector instructions through `mvex.inc`, the card
-  binary audited for what Knights Corner runs (`card/vpu/build.md`),
-  the backend a shared object whose ggml calls are undefined symbols
-  (`host/asm/README.md`). The C worker it replaced is in the history
-  before commit `6484cf0` (`docs/results/2026-09-30-worker-assembly.md`),
-  the Rust backend before the commit of
-  `docs/results/2026-09-30-backend-assembly.md`; their design notes stay
-  as `.md` files beside where the sources were.
-- **C** only where neither is an option: the card's protocol headers
-  (`card/vpu/*.h`, the readable contract the layout checkers read), the
-  card examples, and small helpers under `tools/` that must see the C
-  headers as C sees them (ggml's, llama.cpp's, the protocol's), compiled
-  and run with `tcc`.
+- **C** (C17 with GNU extensions, gcc) for the intercept preload
+  (`host/c`, `libphi512-c.so`), its conventions in
+  [`host/c/README.md`](host/c/README.md): `-Werror`, clang-format and
+  clang-tidy clean, no AVX-512 in its own code, libc allowed, nothing
+  exported. Also the card's protocol headers (`card/vpu/*.h`, the
+  readable contract the layout checkers read), the card examples, and the
+  test programs and helpers under `tools/` (gcc, or `tcc` for the small
+  ones that must see the C headers as C sees them).
+- **Assembly** for the card worker (`card/vpu`), the ggml backend
+  (`host/asm/ggml-phi` with `host/asm/common`) and the assembly preload
+  (`host/asm/phi512`) the C one replaces module by module: x86-64 GNU
+  `as`, no libc, the card's vector instructions through `mvex.inc`, the
+  card binary audited for what Knights Corner runs
+  (`card/vpu/build.md`), layouts from checkers never by hand
+  (`host/asm/README.md`). The C worker the assembly one replaced is in
+  the history before commit `6484cf0`
+  (`docs/results/2026-09-30-worker-assembly.md`).
+- **Rust** only for what is not ported yet (the crates under
+  `host/crates`); nothing new is written in it.
 - **Shell** (`sh`, POSIX where practical, `bash` when arrays are needed) for
   scripts that orchestrate the stack's tools and the card worker.
-- **Never Python or JavaScript** for anything here.
+- **Never Python, JavaScript or Perl** for anything here.
 
 ## Documentation
 
@@ -52,8 +54,10 @@ sections are the same in every repository of the family (see
 - Results are recorded under `docs/results/` with the date, the host
   kernel, and the exact command. Timings closer than this host's drift (a
   quarter over tens of minutes) need interleaved runs.
-- `cargo test` needs no card. What needs one is run by hand against a
-  card that is up: `scripts/phi512-check.sh` and `scripts/phi512-ground.sh`
+- `make check` needs no card. What needs one is run by hand against a
+  card that is up: `scripts/gates.sh` (the preload's regression gates,
+  [`scripts/gates.md`](scripts/gates.md)), the llama.cpp runs under
+  `scripts/bench/`, `scripts/phi512-check.sh` and `scripts/phi512-ground.sh`
   (conformance against hardware and against the card), and the programs
   under `tools/`.
 
@@ -62,7 +66,7 @@ sections are the same in every repository of the family (see
 | repository | what | finds its dependency by |
 | --- | --- | --- |
 | [Intel-Phi-3120A](https://github.com/Lasimeri/Intel-Phi-3120A) | the cards' software stack: daemon, kernel, boot, storage, the `phi` CLI, the cross toolchain | (none) |
-| [Intel-Phi-AVX512](https://github.com/Lasimeri/Intel-Phi-AVX512) (this one) | the cards as an AVX-512 co-processor: phi512, the card worker, the `libggml_phi.so` backend | `PHI_STACK_ROOT`, `phi` on PATH, a checkout next to this one, `$HOME` |
+| [Intel-Phi-AVX-512-C](https://github.com/Lasimeri/Intel-Phi-AVX-512-C) (this one) | the cards as an AVX-512 co-processor: the C intercept preload, the card worker, the `libggml_phi.so` backend; [Intel-Phi-AVX-512-ASM](https://github.com/Lasimeri/Intel-Phi-AVX-512-ASM) is its frozen assembly twin | `PHI_STACK_ROOT`, `phi` on PATH, a checkout next to this one, `$HOME` |
 | [Intel-Phi-Stream](https://github.com/Lasimeri/Intel-Phi-Stream) | a thought stream over the GPU, the cards and host memory, through `libggml_phi.so` | `PHI_AVX512_ROOT`, a checkout next to it, `$HOME` |
 | [Intel-Phi-Jev](https://github.com/Lasimeri/Intel-Phi-Jev) | `xks`, a local Jev (System One) whose subject runs on the host and the cards | `PHI_AVX512_ROOT`, a checkout next to it, `$HOME` |
 | [Mechanical-Jev](https://github.com/Lasimeri/Mechanical-Jev) | `mjev`, the asking side of Jev, and Jev reverse engineered from its docs | `MJEV_XKS`, `xks` on PATH, a checkout next to it, `$HOME` |
