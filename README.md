@@ -7,15 +7,17 @@ AVX-512 instruction it reaches is carried, with the code around it, to
 the card's vector units and executed there as MVEX, the card's own
 encoding of the same operations. Nothing is interpreted. Results are
 bit-identical to what real AVX-512 hardware produces, on everything the
-tests here cover. The preload is being rewritten in C since 2026-10-14
-(the next section), after the assembly restart of 2026-10-13 (the section "The restart" below; the plan's
-stages and gates are in the dated records under `docs/results`).
+tests here cover. This repository is the C version: the preload is being
+rewritten in C since 2026-10-14 (the next section), module by module,
+after the assembly restart of 2026-10-13 ("The assembly restart" below;
+the plan's stages and gates are in the dated records under `docs/results`).
 
 ```
-PHI512_V3=1 scripts/phi512.sh -- ./my-avx512-program        # the assembly library, four cards
-PHI512_CARDS=0,1,2,3 PHI512_VERBOSE=1 LD_PRELOAD=host/target/release/libphi512-asm.so ./my-avx512-program
-PHI512_CARDS=0,1,2,3 PHI512_VERBOSE=1 LD_PRELOAD=host/target/release/libphi512-asm.so \
-    llama-server -m Qwen3.8-Flash-Next-BF16-00001-of-00008.gguf -ngl 0 -t 1 --port 8012   # the target: the full AVX-512 build
+make -C host/c                                   # host/c/out/libphi512-c.so (on the rack)
+cp host/c/out/libphi512-c.so ~/.cache/libphi512-c.so    # LD_PRELOAD cannot take a path with spaces
+PHI512_CARDS=0,1,2,3 PHI512_VERBOSE=1 LD_PRELOAD=$HOME/.cache/libphi512-c.so ./my-avx512-program
+PHI512_CARDS=0,1,2,3 PHI512_CARD_ATOMICS=1 LD_PRELOAD=$HOME/.cache/libphi512-c.so \
+    llama-bench -m Qwen3.8-Flash-Next-BF16-00001-of-00008.gguf -p 4 -n 2 -t 1 -ngl 0   # the target: the full AVX-512 build
 ```
 
 The host is the GPU rack's EPYC 7742 (no AVX-512) with four cards.
@@ -70,6 +72,8 @@ everything else native on the host through the AVX2 twin build; target
 at least 12 tok/s generation. The reason: about 6,900 card round trips a
 token for graph building alone, at 38 to 48 us each at least, keep a
 preload that sends every region to a card under 3 tok/s (arithmetic).
+Nothing measured yet shows 12 tok/s on this machine without the GPUs
+(the numbers above); how the split reaches it is open.
 
 ```
 make -C host/c && make -C host/c check      # libphi512-c.so and its checks (on the rack)
@@ -77,10 +81,20 @@ scripts/gates.sh                            # the regression gates on card 0 (sc
 scripts/bench/lb-run.sh lb1 4 2             # llama-bench under it (scripts/bench/README.md)
 ```
 
-The rest of this README describes the repository as the assembly
-restart left it on 2026-10-13.
+Status of the C version (2026-10-14):
 
-## The restart (2026-10-13)
+| piece | state |
+| --- | --- |
+| `main.c` (constructor, destructor) | ported; reads the environment from the loader's `envp` because `-z initfirst` runs it before libc's own init (glibc `elf/dl-init.c`); smoke test on the rack: the init lines, "no card" on an absent card, silent under `PHI512_DISABLE=1` |
+| the hybrid build, `make check` | in place: 13 assembly modules and 7 common ones linked with the C objects; exports nothing, 12 libc imports, clang-format and clang-tidy clean; the full `make check` passes on the rack |
+| `scripts/gates.sh`, `scripts/bench` | in place; the guard refuses while production holds a card (checked); the gates have not yet run on the C library: production holds all four cards |
+| the translator (`decode`, `fnscan`, `mvex`, `xlate`, `blob`) | still assembly; planned: each port with an offline check comparing the assembly and C blobs of every function of `libggml-cpu`, `libggml-base` and `libm` (not written yet) |
+| the split (heavy ops on the cards, the rest native) | not started |
+
+The sections below describe the assembly modules the C library still
+links (the restart of 2026-10-13 and 14), the backend, and the layout.
+
+## The assembly restart (2026-10-13 and 14)
 
 The wrapper is being rewritten in place, in assembly, component by
 component (the plan's stages; the Rust crates stay until the last ones
@@ -93,17 +107,17 @@ are replaced). What runs today:
 | 3 | the translator: `decode.S` (every field equal to iced-x86 over 2.34 million instructions of ten binaries), `fnscan.S` (a function indexed: kinds, branch targets, calls), `mvex.S` and `xlate.S` (the recipes: one-to-one forms, 128- and 256-bit forms under lane masks, the unaligned pairs, extracts, shuffles, scalar forms), `blob.S` (a function's blob: copies, re-based rip-relative operands, branches re-laid out, exits, constants, the rip map), `xlfn.S` (a function translated at its first fault, loaded on every card) | the seamless test from automatic translation, the table above |
 | 3, regions | regions and exits (`region.S`): a function runs on card 0 from the fault to its next call, return, jump out or syscall, and the host continues natively from there; the function is found in whichever object is mapped at the fault (`elf.S`: the maps line's path and file offset, that file's symbol table); memory the region touches is made resident in 64 KiB units as it faults, shadowed on the host, and written back by line diff; the lines the host changed since travel with the request and the card copies them in with its own stores (a DMA fill is not coherent against a line a core holds dirty) | llama-server of the full AVX-512 build on the BF16 Qwen3.8 Flash-Next shard: 976 regions on card 0 through libmtmd's constructor, the C++ regex compiler and the option parser, about 2 ms a region, no crash; then `-m` rejected by a silently wrong region, the open item |
 | 3, recipes | the recipes measured against the objects llama-server loads (`tools/recipe-census.c`, by the decoder's own mnemonic ids): 322,212 vector instructions of 289 mnemonics in libllama-server-impl, libllama-common, libllama, libggml-base, libggml-cpu and libmtmd, of which 25,321 (123 mnemonics) have no recipe after the batch of 2026-10-13 evening (`xlate2.S`: the qword adds, shifts, multiplies, compares and min/max in dword lanes, the widenings and conversions, the blends, float min/max, the block shuffles, insertps, the byte shifts, the mask shifts: 75 forms, assembled and census-checked, not yet run on the card); the two form suites are 11 and 23 mnemonics short | the suites' verdicts on card 0 are the gate; the byte and word forms of the quantized kernels (vpshufb, vpmaddubsw, vpmaddwd) come after the BF16 path |
+| 3, llama.cpp (2026-10-14) | the full AVX-512 build end to end under the assembly preload (2c8ceb3), card 0, one host thread: in-card callees through PLT stubs and thunks (libggml-cpu, libggml-base, libm), uffd write tracking with the card's own diff, 2 MiB weight chunks streamed through a 4 GiB pool | llama-bench on the BF16 Flash-Next: pp4 0.0078 tok/s (511 s), tg2 0.0037 tok/s (273 s a token); about 6,900 card round trips a token for graph building alone; the elementwise ops equal to the AVX2 twin's, the router's top 10 different in 8 of 48 layers |
 
-The target is `llama-server` of `llama.phi`'s full AVX-512 build
-(every library of it built `-mavx512f`, nothing swapped) on the BF16
-Qwen3.8 Flash-Next model, the functions it faults in translated lazily
-and run as regions on the cards; no stand-in program, smaller model or
-simulation stands for it. The reference is the same server on the AVX2
-twin build, measured the same way (32 greedy tokens of one prompt; the
-earlier 1.78 tokens/s was `llama-simple`'s and is not compared). Then
-the planner that gives each kernel its loop and operand ranges, the
-placement of dense rows and hot experts over the four cards with two
-threads a core, and the A/B against production.
+The target is llama.phi's full AVX-512 build (every library of it
+built `-mavx512f`, nothing swapped) on the BF16 Qwen3.8 Flash-Next
+model; no stand-in program, smaller model or simulation stands for it.
+The reference is the same program on the AVX2 twin build
+(`build-phi512-cpu`, the same source), measured the same way. Under the
+assembly design every function it faulted in ran as regions on the
+cards; the C version changes that split (the section above): `mul_mat`
+and `mul_mat_id` on the cards against resident weights, the rest native
+through the twin.
 
 ## What you need
 
@@ -122,13 +136,21 @@ threads a core, and the A/B against production.
   the translator and the encoder; and `phi-pld` where llama.cpp's
   headers are found (`LLAMA_CPP_DIR`, default `~/llama.cpp`; skipped with
   a note otherwise; it also needs libclang).
+- `make c` (on the rack): `host/c/out/libphi512-c.so`, the C preload
+  (gcc and GNU `as`; `make check` also wants clang-format and
+  clang-tidy). [`host/c/README.md`](host/c/README.md) is its guide.
 - The card's worker deployed once (`scripts/phi-vpu.sh -c N deploy`); it
   lives on the card's persistent disk after that, and the wrapper starts
   it when it is not running (`scripts/phi-vpu.sh -c N start` by hand).
 
 ## How it works
 
-The wrapper preloads `libphi512-asm.so` (`host/asm/phi512`). The host
+The wrapper preloads `libphi512-c.so` (`host/c`). Its constructor is C
+(`main.c`); every other module is still the assembly of
+`host/asm/phi512`, linked into the same library, so the path below is
+the assembly's (`make -C host/c asm-only` links the same modules all in
+assembly as `libphi512-c-asm.so`; `host/asm/phi512/build.sh` builds the
+original `libphi512-asm.so`). The host
 CPU raises SIGILL at the program's first AVX-512 instruction; the
 handler finds the function that holds it in whichever object is
 mapped there (the maps line's path and file offset, that file's symbol
@@ -401,20 +423,20 @@ and `libggml_phi.so` from this repository.
 
 ```
 ╔══ host (EPYC 7742 on the rack: no AVX-512) ════════════════════════════════════════════════════╗
-║ program built -mavx512f ──SIGILL──▶ libphi512-asm.so (host/asm/phi512): sigill.S the handler,  ║
-║   elf.S the function at the fault, decode.S + fnscan.S its index, xlate.S/mvex.S/blob.S its    ║
-║   blob (EVEX and VEX as MVEX, exits as stubs, the rip map), xlfn.S loads it, region.S runs a   ║
-║   region to its exit, card.S the session; the Rust libphi512.so (host/crates) being replaced   ║
+║ program built -mavx512f ──SIGILL──▶ libphi512-c.so (host/c): main.c in C, linked with the      ║
+║   assembly modules of host/asm/phi512: sigill.S the handler, elf.S the function at the fault,  ║
+║   decode.S + fnscan.S its index, xlate.S/mvex.S/blob.S its blob (EVEX and VEX as MVEX, exits   ║
+║   as stubs, the rip map), xlfn.S loads it, region.S runs a region to its exit, card.S: cards   ║
 ║ llama.cpp ──GGML_BACKEND_PATH──▶ libggml_phi.so (host/asm/ggml-phi + common: the backend)      ║
 ║ drivers: phi-vpu (Rust: status, poly, matmul-check); phi-vpu-ping, -fexec, -resident (asm)     ║
-║ scripts: phi512.sh (PHI512_V3=1: the assembly library), phi-ggml.sh, phi-vpu.sh, stack.sh      ║
+║ scripts: gates.sh (card gates), bench/ (llama.cpp runs), phi-ggml.sh, phi-vpu.sh, stack.sh     ║
 ║                              │ writes requests, reads replies                                  ║
 ║                              ▼                                                                 ║
 ║ /dev/shm/phi-hostmem[-N], 2 GiB a card (the window: card/vpu/*.h, proto.inc, layout-checked)   ║
 ║   0 READY  64 REQ  256 REPLY  320 STATS  448 SLOTSEQ (u16 x 32)  13312 MATMUL  65536 SLOTS     ║
 ║   48 MiB SLOTDATA (1 MiB a slot)  80 MiB LOADAREA  96 MiB RESIDENT  128/640/704 MiB A/B/D      ║
 ╚═══════════════════════════════════════╤════════════════════════════════════════════════════════╝
-                                        │ PCIe Gen2 x8, 3.2 GB/s a card: uncached loads, posted stores, DMA ch 7
+                                        │ 3.2 GB/s a card: uncached loads, posted stores, DMA ch 7
 ╔═══════════════════════════════════════╧═ card N (Xeon Phi 3120, 57 cores x 4 threads) ═════════╗
 ║ phi-vpu-worker (card/vpu/worker.S): the dispatcher on CPU 0 reads REQ and SLOTSEQ each poll    ║
 ║   ├─ legacy kinds 1..8 on the spare cores' pool: exec.S (K_EXEC), matmul.S, rows.S, kernels.S  ║
@@ -429,7 +451,8 @@ and `libggml_phi.so` from this repository.
 
 | path | what |
 | --- | --- |
-| `host/asm/phi512` | `libphi512-asm.so`, the preloaded library in assembly: the handler, the decoder and its generated tables, the function index, the recipes and emitter, the blob builder, regions, the cards' session ([`host/asm/phi512/phi512.md`](host/asm/phi512/phi512.md)) |
+| `host/c` | `libphi512-c.so`, the preloaded library in C: `main.c` so far, the rest linked from `host/asm/phi512` (the hybrid build), its Makefile and checks ([`host/c/README.md`](host/c/README.md)) |
+| `host/asm/phi512` | `libphi512-asm.so`, the preloaded library in assembly, the reference and the modules `host/c` has not ported yet: the handler, the decoder and its generated tables, the function index, the recipes and emitter, the blob builder, regions, the cards' session ([`host/asm/phi512/phi512.md`](host/asm/phi512/phi512.md)) |
 | `host/crates/phi512` | the Rust library that preceded it: the SIGILL handler, the planner, the dispatcher, the emulator; replaced piece by piece |
 | `host/crates/avx512-xlate` | EVEX to MVEX: the byte-level rewriter for the seamless path and the builder-based translator for kernels |
 | `host/crates/knc-mvex` | the MVEX encoder the translator builds on |
@@ -438,25 +461,29 @@ and `libggml_phi.so` from this repository.
 | `host/crates/phi-pld` | `phi-pld`, prompt lookup decoding over libllama (llama.cpp unchanged), served as llama-server serves; its simulator; built where llama.cpp is found |
 | `card/vpu` | the card-side worker: the exec engine, the explicit path's thread pool and the matrix-multiply service; built by `scripts/phi-vpu.sh deploy`, on the host with the stack's cross toolchain when it has one (`card/vpu/build.md`) |
 | `card/examples` | the AVX-512 kernel and its translation the explicit path and the ground-truth check use |
-| `tools` | the seamless, narrow, forms, review and region tests, the decoder and scan checks against iced-x86, the recipe census and the translation check (`recipe-census`, `xlate-check`), the table generators, the protocol layout check |
-| `scripts` | `phi512.sh` (the wrapper), `phi-vpu.sh` (the worker), `phi512-check.sh` and `phi512-ground.sh` (conformance against hardware and against the card), `phi512-install.sh` (system-wide preload) |
+| `tools` | the seamless, narrow, forms, review, region and libm tests, the ggml router and op tests (`ggml-router-test.c`, `ggml-op-test.c`), the decoder and scan checks against iced-x86, the recipe census and the translation check (`recipe-census`, `xlate-check`), the table generators, the protocol layout check |
+| `scripts` | `gates.sh` (the preload's card gates) and `card-users.sh`, `bench/` (llama-bench and llama-debug under the preload), `phi512.sh` (the Rust-era wrapper), `phi-vpu.sh` (the worker), `phi512-check.sh` and `phi512-ground.sh` (conformance against hardware and against the card), `phi512-install.sh` (system-wide preload) |
 | `docs/research` | the precision audit that gates the translation, and the transparency design |
 | `docs/results` | dated records with every number |
 
 `make check` runs the documentation rules, formatting, lints, the build,
 tests, the protocol layout check, the comparison of `knc-mvex` with the
-stack's copy (`mvex-check`), and the decoder and function-scan checks
-against iced-x86 (`decode-check`, `fnscan-check`); `CONTRIBUTING.md` has
-the rules.
+stack's copy (`mvex-check`), the decoder and function-scan checks
+against iced-x86 (`decode-check`, `fnscan-check`), and the C preload's
+checks (`c-check`: the build with `-Werror`, no AVX-512 instruction in
+the C objects, its imports against `host/c/imports.want`,
+clang-format, clang-tidy). The card gates are separate
+(`scripts/gates.sh`, [`scripts/gates.md`](scripts/gates.md)): they
+restart a card's worker. `CONTRIBUTING.md` has the rules.
 
 ## The repositories
 
 | repository | what | how it is found |
 | --- | --- | --- |
 | [Intel-Phi-3120A](https://github.com/Lasimeri/Intel-Phi-3120A) | the cards' software stack: boots them, serves their memory, the `phi` command | `PHI_STACK_ROOT`, else `phi` on PATH, else a checkout next to this one, else in `$HOME` |
-| [Intel-Phi-AVX-512-ASM](https://github.com/Lasimeri/Intel-Phi-AVX-512-ASM) (this one) | the cards as an AVX-512 co-processor, the host library in assembly (Intel-Phi-AVX512 until 2026-10-13) | `PHI_AVX512_ROOT`, else a checkout next to Intel-Phi-Jev, else in `$HOME` |
-| [Intel-Phi-AVX-512-C](https://github.com/Lasimeri/Intel-Phi-AVX-512-C) | the same history to 71ab2ce, reserved for a C version of the host library; nothing written there yet | |
-| [Intel-Phi-Stream](https://github.com/Lasimeri/Intel-Phi-Stream) | a thought stream over the GPU, the cards and host memory, through `libggml_phi.so` and `scripts/phi-ggml.sh` | `PHI_AVX512_ROOT`, else a checkout next to it, else in `` |
+| [Intel-Phi-AVX-512-C](https://github.com/Lasimeri/Intel-Phi-AVX-512-C) (this one) | the cards as an AVX-512 co-processor with the preload in C, the card worker and the `libggml_phi.so` backend; development continues here since 2026-10-14 | `PHI_AVX512_ROOT`, else a checkout next to Intel-Phi-Jev, else in `$HOME` |
+| [Intel-Phi-AVX-512-ASM](https://github.com/Lasimeri/Intel-Phi-AVX-512-ASM) | the same history to 3ee445c, the host library in assembly (Intel-Phi-AVX512 until 2026-10-13); frozen there | |
+| [Intel-Phi-Stream](https://github.com/Lasimeri/Intel-Phi-Stream) | a thought stream over the GPU, the cards and host memory, through `libggml_phi.so` and `scripts/phi-ggml.sh` | `PHI_AVX512_ROOT`, else a checkout next to it, else in `$HOME` |
 | [Intel-Phi-Jev](https://github.com/Lasimeri/Intel-Phi-Jev) | `xks`, a local Jev (TypeSafe System One) whose model runs through `libggml_phi.so` (its `cards` site) and `phi512.sh` (its `avx512` site) | by Mechanical-Jev |
 | [Mechanical-Jev](https://github.com/Lasimeri/Mechanical-Jev) | `mjev`, the asking side of that Jev | |
 
