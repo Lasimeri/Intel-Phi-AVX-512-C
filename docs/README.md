@@ -7,6 +7,7 @@
 | [avx512-on-knc.md](research/avx512-on-knc.md) | The precision audit: which AVX-512 operations the card computes bit-identically, which need expansion, which cannot be offered; gates everything |
 | [avx512-transparency.md](research/avx512-transparency.md) | The design of the transparent path: interception, regions, the register file, memory |
 | [selection-under-a-slow-link.md](research/selection-under-a-slow-link.md) | Why this machine has the opposite balance to a GPU, and what a documented 2008 collection system settled about that balance: keep the corpus where it is, make depth follow the arrival rate, promote in three decisions, reduce where the data is; which of those this repository has built and which it may not have |
+| [phi-vram-dma.md](research/phi-vram-dma.md) | The Phi cards reading GPU memory by DMA (2026-10-15): the ceiling (four 3.2 GB/s links against 16.9 GB of GLM-5.3-Flash experts a token, 0.76 tok/s), the machine's facts (BAR1 fixed at 256 MiB, a 246 MiB host-visible Vulkan heap, IOMMU on, the cards on VFIO), a design on documented interfaces only (a Vulkan dma-buf of a staging ring, handed to phictl, mapped with iommufd `IOMMU_IOAS_MAP_FILE`, pulled by the card's DMA channel 7), the interfaces' current limits, three go or no-go probes, and the host-memory fallback |
 
 ## Results
 
