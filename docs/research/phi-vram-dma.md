@@ -102,6 +102,32 @@ The cards' links, not the GPUs, set the ceiling of this design.
    rows to the card next to that GPU, and gathers the outputs. Experts in
    system memory keep today's path.
 
+## What changes where (from the code, 2026-10-15)
+
+- **Card worker.** No request carries a mixture's weights today:
+  `K_MATMUL_ID` and `K_MATMUL_MORE` refuse a weight that is not
+  resident (`card/vpu/matmul.S`, the `a_id` 0 checks), and the one
+  window-weight path (plain `K_MATMUL` with `MM_A_OFF`) reads through
+  the block device (`vpu_pull`, `card/vpu/worker.S`), not DMA. `K_VPULL`
+  is new: a list of slot addresses, pulled with `cdma_submit_phys` into
+  pool pages in pieces of at most 16383 lines (`card/vpu/cdma.md`), then
+  the existing BF16 kernels (`rows_slice_multi_f`).
+- **Backend.** It accepts only host-memory weights: `weight_readable`
+  uses `ggml_backend_buft_is_host` and `supports_buft` is host-only
+  (`host/asm/ggml-phi/glue.S`); no `offload_op` is installed; the `ids`
+  are read from host memory. For VRAM experts it needs: the ids copied
+  to the host (`ggml_backend_tensor_get`), the ring's slots chosen and
+  filled by the GPU, `K_VPULL` posted, and `plan`/`take` taught that these
+  experts have no host rows.
+- **Window.** Each card's window is 4 GiB on the rack, but the worker
+  maps only its first 768 MiB (`card/vpu/defs.inc` `WIN_BYTES`); the
+  fallback ring fits above that.
+- **Measured so far.** The card's DMA from host memory is measured only up
+  to 64 KiB a copy (3.2 GB/s); the large-copy rate is part of P3. The
+  2026-10-09 record found the host CPU computing Flash-Next's experts at
+  15.3 tok/s and that streaming misses over the links did not beat it
+  (`docs/results/2026-10-09-bf16-cards-whole-experts.md`).
+
 ## Probes before building (each a go or no-go)
 
 | probe | what it shows | needs |
