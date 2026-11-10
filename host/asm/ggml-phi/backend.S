@@ -1999,7 +1999,7 @@ drop_pages:
 # process has one (tridma_back, an LD_PRELOAD library: the pages then come
 # back from the card by K_DOWNLOAD on a fault, not from the disk), else
 # given to MADV_PAGEOUT as before (drop_pages); the bytes in rax
-# (2026-11-06). A mixture's experts always go to drop_pages.
+# (2026-11-06). A mixture's whole experts go through back_whole.
 	.globl back_or_drop
 back_or_drop:
 	pushq %rbx
@@ -2035,6 +2035,57 @@ back_or_drop:
 	movq %r12, %rsi
 	call drop_pages
 9:	popq %r13
+	popq %r12
+	popq %rbx
+	ret
+
+# back_whole(addr rdi, len rsi, id rdx, a_off rcx, card r8): one whole
+# expert of a mixture, uploaded as bytes a_off.. of the card's slice id,
+# handed to the DMA router as back_or_drop hands a dense matrix's rows
+# (2026-11-10): a prompt computed on a GPU then reads the expert from the
+# card by K_DOWNLOAD, where its dropped pages came back from the disk.
+# The router speaks to the first card only, so an expert another card
+# holds, and every expert when the process has no router, goes to
+# drop_pages. The bytes in rax.
+	.globl back_whole
+back_whole:
+	pushq %rbx
+	pushq %r12
+	pushq %r13
+	pushq %r14
+	subq $8, %rsp
+	movq %rdi, %rbx
+	movq %rsi, %r12
+	movq %rdx, %r13
+	movq %rcx, %r14
+	testq %r8, %r8
+	jnz 8f
+	cmpl $0, tb_tried(%rip)
+	jne 1f
+	movl $1, tb_tried(%rip)
+	xorl %edi, %edi				# RTLD_DEFAULT
+	leaq s_tridma_back(%rip), %rsi
+	call dlsym@PLT
+	movq %rax, tb_fn(%rip)
+1:	cmpq $0, tb_fn(%rip)
+	je 8f
+	xorl %edi, %edi
+	call card_at				# the first card
+	movq CD_BASE(%rax), %r8
+	movl CD_THREADS(%rax), %r9d
+	movq %rbx, %rdi
+	movq %r12, %rsi
+	movq %r13, %rdx
+	movq %r14, %rcx
+	call *tb_fn(%rip)
+	testq %rax, %rax
+	jnz 9f
+8:	movq %rbx, %rdi
+	movq %r12, %rsi
+	call drop_pages
+9:	addq $8, %rsp
+	popq %r14
+	popq %r13
 	popq %r12
 	popq %rbx
 	ret
@@ -3790,7 +3841,12 @@ plan_whole:
 	imulq pa_nb_a2(%rip), %rdi
 	addq pa_a(%rip), %rdi
 	movq -48(%rbp), %rsi
-	call drop_pages
+	movsbq WH_CARD_OF(%r13,%r15), %rax	# the card that holds it
+	movq SP_ID(%rbx,%rax,8), %rdx		# that card's slice
+	movl WH_LOCAL(%r13,%r15,4), %ecx
+	imulq -48(%rbp), %rcx			# the expert's place in it
+	movq %rax, %r8
+	call back_whole
 	addq %rax, %r14
 811:	incq %r15
 	jmp 81b

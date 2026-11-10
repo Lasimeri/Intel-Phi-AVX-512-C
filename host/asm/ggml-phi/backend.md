@@ -180,10 +180,26 @@ range from row `SP_R0` to the last, card byte 0 of the slice, id `SP_ID`),
 (`imports.list` has `dlsym`; ggml loads this library `RTLD_LOCAL`, so the router
 is an `LD_PRELOAD` library and this side passes it the window base and the thread
 count). When the process has it, the range goes to the router, which backs those
-pages with the card (`VPU_K_DOWNLOAD` on a fault) instead of the disk; else, and
-always for a mixture's experts, the pages go to `MADV_PAGEOUT` as before
+pages with the card (`VPU_K_DOWNLOAD` on a fault) instead of the disk; else the
+pages go to `MADV_PAGEOUT` as before
 (`drop_pages`). `phi_ggml_open` also clears the window's doorbell lock
 (`OFF_LOCK`, see `../common/window.md`) when it maps a card.
+
+A mixture's whole experts go the same way since 2026-11-10 (`back_whole`,
+called for every expert a card holds where `plan_whole` dropped its pages):
+the range is the expert's matrix in the mapped file, the id the holding
+card's slice (`SP_ID`), the card byte the expert's place in that slice
+(`WH_LOCAL` times the expert's bytes). The router speaks to the first card
+only: an expert another card holds, and every expert when the process has no
+router, is dropped as before. Until then the experts were always dropped, so a
+prompt computed on a GPU read every card-held expert back from the disk.
+Measured on a 35 B Q6_K model, a 7120A holding every dense row and 109 whole
+experts of each layer's 256 (12.92 GB), a 1,410-token prompt on an RTX 3090 Ti:
+83.4 tok/s with the experts read from the disk, 358.0 with them from the card
+(13,191 ranges card-backed; with `TRIDMA_VERIFY=4`, 225.4 tok/s and 12,008 chunks equal to
+the file, 0 differing); the first generated token's log-probabilities are the
+same to the last digit either way; the disk read during a 220-token generation fell
+from 1,836 to 437 MiB.
 
 ## Streamed weights (`PHI_GGML_STREAM`, 2026-11-06)
 
