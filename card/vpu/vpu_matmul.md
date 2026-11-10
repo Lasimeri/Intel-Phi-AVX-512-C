@@ -193,7 +193,8 @@ kernel tables the service uses: `struct qfmt` now holds `k[2][3]`, the
 float32 kernels and their `h` twins, indexed by the request's `b_type`
 and by the group's row count. A row's stride is then `k * 2` instead of
 `k * 4`, and `q8_0_tail`, which finishes the weights past the last whole
-superblock on the scalar unit, reads halves or floats by the same flag.
+superblock (on the vector unit since 2026-11-09, `rows.md`, "The sums"),
+reads halves or floats by the same flag.
 
 The card refuses `b_type` for a float weight type (`shape_ok`), because
 only the generated quantized kernels have float16 twins; the float

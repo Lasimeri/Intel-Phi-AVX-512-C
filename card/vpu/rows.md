@@ -60,23 +60,49 @@ exactly.
 - `run_pieces`, `rows_slice_q`, `rows_slice_multi`: a slice's rows of one
   matrix, or of each matrix of a request of several, cut as one.
 
-## The sums: the x87 unit, as the C compiled
+## The sums: the vector unit (2026-11-09)
 
 A result is the sixteen partial sums of its accumulator vector added
 together, plus, for a Q8_0 row whose length is not a multiple of 256, the
-row's last blocks done here. The C worker wrote both as plain C float
-arithmetic, which the card toolchain compiles to the x87 unit (the
-`knc64-x87` ABI: no SSE), and in x87 a chain of additions stays in the
-80-bit register until it is stored, rounding once. The card's results
-therefore depend on exactly that: `fldz`, sixteen `fadds` in lane order,
-then for a tail `s = sum over 32 of xv * q` per block (`fimuls` by the
-signed byte widened to 16 bits, as clang emitted) and `tail += d * s`,
-then `sum += tail`, then one `fstps` into the result. `rows_range_q`
-and `matmul.S`'s float path do exactly this, read off the compiled C
-(`knc-cc -O2 -S vpu_matmul.c`, 2026-09-30), so that a result is the same
-float to the bit, and a model's text under the assembly worker is the
-same byte for byte as under the C one. A vector reduction would be
-faster and would round differently; it is not used for that reason.
+row's last blocks, and for a float row its last `k % 16` elements. All
+three are done on the vector unit; the worker has no x87 instruction.
+
+| step | how |
+| --- | --- |
+| a Q8_0 row's last blocks (`q8_0_tail`) | per 34-byte block: the scale's half up-converted into one lane and stored to the scratch, the 32 signed bytes as two vectors (`{sint8}` unpack pairs), `w0 * x0 + w1 * x1` against the activations (float32, or `{float16}` at a 32-byte stride), and that times the scale, broadcast from the scratch, into the row's accumulator |
+| a float row's last `k % 16` elements (`tail_dot`, `matmul.S`) | one masked expand-load of the weights (float32, `{float16}`, or `{uint16}` shifted left 16 for bfloat16) and one of the activations: the low `k % 16` lanes take that many consecutive elements, the others stay zero, nothing past the row is read; their product added to the sixteen partial sums |
+| the sixteen partial sums (`SUM16`, `matmul.inc`) | each float a `{1to16}` broadcast operand of an add, four chains of four (lanes `i`, `i + 4`, `i + 8`, `i + 12`), then two levels: six adds deep |
+| the store | the vector to a 64-byte aligned slot (the kernels' scratch, or the float path's own `out`), lane 0 moved to the result as four integer bytes |
+
+Both tails go into the accumulator before it is summed, so a result is
+one reduction whatever the row's length.
+
+What this replaced, and what it cost: until 2026-11-09 the sums and the
+tails were in the x87 unit, read off the C worker's compiled code
+(`fldz`, sixteen `fadds` in lane order, the tail in `fimuls`, one
+`fstps`), so that a result was the same float to the bit as under the C
+worker: in x87 a chain of additions stays in the 80-bit register and
+rounds once. The vector reduction adds in float32 and in another order,
+so a result now differs in its last bits from every run before it; the
+check's tolerance (`matmul.md` of `phi-vpu`) is unaffected.
+
+Measured on card 0, Q4_0, float16 activations, 114 threads, the card's
+compute time, the two worker binaries deployed in turn twice, best of
+15 each (`phi-vpu matmul-check --only q4_0 --act 1 --m M --k K
+--repeat 15`):
+
+| shape, activation rows | x87 sums | vector sums |
+| --- | --- | --- |
+| 17408 x 5120, 1 | 1.063 ms | 1.069 ms |
+| 17408 x 5120, 8 | 2.615 ms | 2.529 ms |
+| 17408 x 5120, 64 | 22.320 ms | 21.597 ms |
+| 61440 x 256, 1 | 0.277 ms | 0.280 ms |
+| 61440 x 256, 8 | 1.270 ms | 1.179 ms |
+| 61440 x 256, 64 | 11.485 ms | 10.123 ms |
+
+At one activation row the two are equal within the runs' spread (the
+medians cross); from eight rows the vector sums are 3 to 12 percent
+faster, more where a row is short and its reductions are a larger share.
 
 ## Registers and frames
 

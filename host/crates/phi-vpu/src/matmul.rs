@@ -431,7 +431,12 @@ fn as_bytes(v: &[f32]) -> &[u8] {
 /// futex-wake costs land only on the first).
 #[allow(clippy::too_many_arguments)]
 fn check_one(w: &Window, threads: u32, t: u32, m: u64, k: u64, n: u64, id: u64, rng: &mut Rng, reps: u32) -> Result<Vec<Duration>> {
-    let nb_a = row_bytes(t, k);
+    // A half-precision row whose length is not a multiple of 16 is padded
+    // to the 32-byte stride its up-converting loads need (shape_ok).
+    let nb_a = match t {
+        MM_F16 | MM_BF16 => row_bytes(t, k).div_ceil(32) * 32,
+        _ => row_bytes(t, k),
+    };
     // The activation rows are memory operands of the kernels, so their
     // stride decides which L1 sets they land in: at k 5120 the stride is
     // 5 x 4096 and eight rows all take the same 64 sets of a 64-set,
@@ -444,6 +449,7 @@ fn check_one(w: &Window, threads: u32, t: u32, m: u64, k: u64, n: u64, id: u64, 
     for _ in 0..m {
         let (bytes, vals) = random_row(rng, t, k);
         a.extend_from_slice(&bytes);
+        a.resize(a.len() + nb_a as usize - bytes.len(), 0);
         rows.push(vals);
     }
     let b: Vec<f32> = act_round((0..n * k).map(|_| rng.unit()).collect());
@@ -1063,7 +1069,14 @@ pub fn check(
         // Only the quantized kernels have a float16-activation twin.
         ACT.store(if t == MM_F32 || t == MM_F16 || t == MM_BF16 { 0 } else { act }, Ordering::Relaxed);
         for &n in &[1u64, 4, 8, 13] {
-            let k = if t == MM_Q8_0 && n == 13 { 544 } else { 512 };
+            // The rows with a tail, at 13 columns (the four-column and the
+            // one-column paths both run): a Q8_0 row of two superblocks
+            // and one block, a float row of 32 vectors and 9 elements.
+            let k = match t {
+                MM_Q8_0 if n == 13 => 544,
+                MM_F32 | MM_F16 | MM_BF16 if n == 13 => 521,
+                _ => 512,
+            };
             check_one(w, threads, t, 61, k, n, id, &mut rng, 1)?;
             id += 1;
         }
@@ -1130,7 +1143,7 @@ pub fn check(
         )?;
         id += 4;
         println!(
-            "{:7} ok: 61 rows{}, k 512 (Q8_0 also 544), n 1 4 8 13, mixtures of 8 experts, and up to four matrices in one request, {threads} threads",
+            "{:7} ok: 61 rows{}, k 512 (Q8_0 also 544, the float types also 521), n 1 4 8 13, mixtures of 8 experts, and up to four matrices in one request, {threads} threads",
             type_name(t),
             if threads > 57 { " and 128" } else { "" },
         );

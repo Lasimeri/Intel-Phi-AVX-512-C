@@ -600,8 +600,9 @@ shape_ok:
 	ret
 
 # ---- the float weight types: one weight row against one or four
-# activation rows (phi_dot*, kernels.S), the sixteen partial sums added in
-# the x87 unit, the row's last k % 16 elements as scalars ----
+# activation rows (phi_dot*, kernels.S), the row's last k % 16 elements
+# added to the sixteen partial sums under a mask (tail_dot), the sums
+# added on the vector unit (SUM16): nothing in the x87 unit ----
 
 # rows_slice(job rdi, slice esi, nslices edx): the pool's entry for one
 # matrix: the quantized types go to rows.S, the float types are done
@@ -707,38 +708,24 @@ rows_slice:
 	cmpq $4, %rcx
 	jae 12f
 	shlq $6, %rcx
-	leaq RS_OUT(%rbp,%rcx), %rax
-	fldz
-	fadds 0(%rax)
-	fadds 4(%rax)
-	fadds 8(%rax)
-	fadds 12(%rax)
-	fadds 16(%rax)
-	fadds 20(%rax)
-	fadds 24(%rax)
-	fadds 28(%rax)
-	fadds 32(%rax)
-	fadds 36(%rax)
-	fadds 40(%rax)
-	fadds 44(%rax)
-	fadds 48(%rax)
-	fadds 52(%rax)
-	fadds 56(%rax)
-	fadds 60(%rax)
-	# the tail: sum += av * b1[x] for x in k16 * 16 .. k
+	leaq RS_OUT(%rbp,%rcx), %rdi		# out[q]: the column's sixteen partial sums
+	# the tail: out[q] += av * b1[x] for x in k16 * 16 .. k
 	movq RS_C(%rbp), %rax
 	addq RS_Q(%rbp), %rax			# c + q
 	movq %rax, %rsi
 	imulq MJ_NB_B(%rbx), %rsi
 	addq MJ_B(%rbx), %rsi			# b1
 	call tail_dot
+	SUM16 rdi				# on the vector unit (rows.md, "The sums")
+	VMOVAPS_ST rdi, 0, zmm0			# back into its own slot of out, which is done with
+	movl (%rdi), %ecx			# the float's four bytes
 	# d[(c + q) * m + i] = sum
 	movq RS_C(%rbp), %rax
 	addq RS_Q(%rbp), %rax
 	imulq MJ_M(%rbx), %rax
 	addq %r15, %rax
 	movq MJ_D(%rbx), %rdx
-	fstps (%rdx,%rax,4)
+	movl %ecx, (%rdx,%rax,4)
 	incq RS_Q(%rbp)
 	jmp 7b
 12:	addq $4, RS_C(%rbp)
@@ -766,32 +753,19 @@ rows_slice:
 	jmp 211f
 213:	call phi_dot_bf16
 211:	popq %rsi
-	leaq RS_OUT(%rbp), %rax
-	fldz
-	fadds 0(%rax)
-	fadds 4(%rax)
-	fadds 8(%rax)
-	fadds 12(%rax)
-	fadds 16(%rax)
-	fadds 20(%rax)
-	fadds 24(%rax)
-	fadds 28(%rax)
-	fadds 32(%rax)
-	fadds 36(%rax)
-	fadds 40(%rax)
-	fadds 44(%rax)
-	fadds 48(%rax)
-	fadds 52(%rax)
-	fadds 56(%rax)
-	fadds 60(%rax)
 	jmp 23f
-22:	fldz
-23:	call tail_dot
+22:	VPXORD zmm0, zmm0, zmm0			# a row shorter than a vector: the partial sums start at zero
+	VMOVAPS_ST rbp, RS_OUT, zmm0
+23:	leaq RS_OUT(%rbp), %rdi
+	call tail_dot				# out += the row's last k % 16 products
+	SUM16 rdi				# on the vector unit (rows.md, "The sums")
+	VMOVAPS_ST rdi, 0, zmm0
+	movl (%rdi), %ecx			# the float's four bytes
 	movq RS_C(%rbp), %rax
 	imulq MJ_M(%rbx), %rax
 	addq %r15, %rax
 	movq MJ_D(%rbx), %rdx
-	fstps (%rdx,%rax,4)
+	movl %ecx, (%rdx,%rax,4)
 	incq RS_C(%rbp)
 	jmp 20b
 30:	incq RS_I(%rbp)
@@ -805,43 +779,50 @@ rows_slice:
 	popq %rbp
 	ret
 
-# tail_dot: with the sum in st(0), add av * b1[x] for x in k16 * 16 .. k,
-# av the weight (a half up-converted, or a float) of the row at
-# RS_TMP(%rbp), b1 the activation row at rsi. Uses the frame of
-# rows_slice (rbp, rbx, r14).
+# tail_dot(out rdi, b1 rsi): out[16] += av * b1[x] for x in k16 * 16 .. k,
+# av the weights of the row at RS_TMP(%rbp) (float32, float16 or
+# bfloat16 by r14d), b1 the activation row: the row's last k % 16
+# elements, on the vector unit. One masked expand-load each (the low
+# k % 16 lanes take that many consecutive elements from the address, the
+# other lanes stay zero, nothing past the row is read), one multiply, and
+# the products added to the row's sixteen partial sums before they are
+# summed. Uses the frame of rows_slice (rbp, r14); keeps rdi and rsi;
+# clobbers rax, rcx, rdx, zmm8, zmm9, k1.
 tail_dot:
-	pushq %r12
-	pushq %r13
-	movq %rsi, %r12
-	movq RS_K16(%rbp), %r13
-	shlq $4, %r13				# x = k16 * 16
 	movq RS_TAIL(%rbp), %rcx
-	addq %r13, %rcx				# k
-	movq %rcx, RS_TMP+8(%rbp)
-1:	cmpq RS_TMP+8(%rbp), %r13
-	jae 9f
-	movq RS_TMP(%rbp), %rax
+	testq %rcx, %rcx
+	jz 9f
+	movl $1, %eax
+	shll %cl, %eax
+	decl %eax				# the low k % 16 lanes
+	KMOV_KR k1, eax
+	movq RS_K16(%rbp), %rdx
+	shlq $4, %rdx				# x = k16 * 16
+	movq RS_TMP(%rbp), %rax			# the weight row
+	VPXORD zmm8, zmm8, zmm8
+	VPXORD zmm9, zmm9, zmm9
 	testl %r14d, %r14d
-	jz 2f
-	movzwl (%rax,%r13,2), %edi
+	jnz 2f
+	leaq (%rax,%rdx,4), %rax
+	VLOADUNPACKLPS zmm8, rax, 0, k=k1
+	VLOADUNPACKHPS zmm8, rax, 64, k=k1
+	jmp 4f
+2:	leaq (%rax,%rdx,2), %rax
 	cmpl $2, %r14d
-	je 4f
-	call half_to_float
-	movl %eax, RS_TMP+16(%rbp)
-	flds RS_TMP+16(%rbp)
-	jmp 3f
-4:	shll $16, %edi				# a bfloat16 is a float32's high half
-	movl %edi, RS_TMP+16(%rbp)
-	flds RS_TMP+16(%rbp)
-	jmp 3f
-2:	flds (%rax,%r13,4)
-3:	fmuls (%r12,%r13,4)
-	faddp %st, %st(1)
-	incq %r13
-	jmp 1b
-9:	popq %r13
-	popq %r12
-	ret
+	je 3f
+	VLOADUNPACKLPS zmm8, rax, 0, conv=CV_F16, k=k1
+	VLOADUNPACKHPS zmm8, rax, 64, conv=CV_F16, k=k1
+	jmp 4f
+3:	VLOADUNPACKLD zmm8, rax, 0, conv=CV_U16, k=k1	# a bfloat16 is a float32's high half
+	VLOADUNPACKHD zmm8, rax, 64, conv=CV_U16, k=k1
+	VPSLLD zmm8, zmm8, 16
+4:	leaq (%rsi,%rdx,4), %rax
+	VLOADUNPACKLPS zmm9, rax, 0, k=k1
+	VLOADUNPACKHPS zmm9, rax, 64, k=k1
+	VMULPS zmm8, zmm8, zmm9
+	VADDPS zmm8, zmm8, rdi, 0
+	VMOVAPS_ST rdi, 0, zmm8
+9:	ret
 
 # rows_slice_id(job rdi, slice esi, nslices edx): a mixture with float
 # weights, one column at a time (the float kernels take their four

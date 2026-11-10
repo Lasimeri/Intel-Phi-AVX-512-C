@@ -27,7 +27,9 @@ and compares with what the card returns, per result, against a tolerance
 of `4e-6` times the sum of the terms' magnitudes plus `1e-6`: the card
 sums 16 lanes in a different order from the host, and both round each
 product once. Shapes: 61 rows (an odd split across 57 threads), k 512
-(two superblocks; Q8_0 also 544, a tail of one block), n 1, 4, 8 and 13
+(two superblocks; Q8_0 also 544, a tail of one block; the float types
+also 521, a tail of nine elements, the half-precision rows padded to
+their 32-byte stride), n 1, 4, 8 and 13
 (the kernels' one-, four- and eight-row variants and a mix); with
 `--threads` above 57 also 128 rows at n 1, 8 and 13 and a 128-row
 mixture, rows enough for a core's two threads to share them (61 rows

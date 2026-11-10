@@ -120,6 +120,39 @@
 	.set TAB_FLOATS, 32
 	.set C_BYTES, 896
 
+# SUM16 base: the sixteen floats at \base added on the vector unit; every
+# lane of zmm0 is their sum. Each float arrives as a broadcast memory
+# operand of an add, four chains of four adds (lanes i, i + 4, i + 8,
+# i + 12 in zmm<i>), so no add waits on the one before it in its chain for
+# more than the vector unit's result latency, then two levels: six adds
+# deep where the scalar unit's chain was sixteen. Uses zmm0 to zmm3; the
+# file that expands it includes mvex.inc first. (rows.md, "The sums".)
+	.macro SUM16 base
+	VPXORD zmm0, zmm0, zmm0
+	VPXORD zmm1, zmm1, zmm1
+	VPXORD zmm2, zmm2, zmm2
+	VPXORD zmm3, zmm3, zmm3
+	VADDPS zmm0, zmm0, \base, 0, conv=CV_1TO16
+	VADDPS zmm1, zmm1, \base, 4, conv=CV_1TO16
+	VADDPS zmm2, zmm2, \base, 8, conv=CV_1TO16
+	VADDPS zmm3, zmm3, \base, 12, conv=CV_1TO16
+	VADDPS zmm0, zmm0, \base, 16, conv=CV_1TO16
+	VADDPS zmm1, zmm1, \base, 20, conv=CV_1TO16
+	VADDPS zmm2, zmm2, \base, 24, conv=CV_1TO16
+	VADDPS zmm3, zmm3, \base, 28, conv=CV_1TO16
+	VADDPS zmm0, zmm0, \base, 32, conv=CV_1TO16
+	VADDPS zmm1, zmm1, \base, 36, conv=CV_1TO16
+	VADDPS zmm2, zmm2, \base, 40, conv=CV_1TO16
+	VADDPS zmm3, zmm3, \base, 44, conv=CV_1TO16
+	VADDPS zmm0, zmm0, \base, 48, conv=CV_1TO16
+	VADDPS zmm1, zmm1, \base, 52, conv=CV_1TO16
+	VADDPS zmm2, zmm2, \base, 56, conv=CV_1TO16
+	VADDPS zmm3, zmm3, \base, 60, conv=CV_1TO16
+	VADDPS zmm0, zmm0, zmm1
+	VADDPS zmm2, zmm2, zmm3
+	VADDPS zmm0, zmm0, zmm2
+	.endm
+
 # The per-format kernel table (matmul.S, g_fmt): block bytes, then the
 # six kernels [b_type][1, 4, 8 rows].
 	.set FMT_BLOCK, 0

@@ -4,8 +4,8 @@
 # (warm_slice), copies its share of a fused pull (copy_share), and
 # multiplies its rows by the groups' activation rows with the kernels of
 # kernels.S (rows_range_q), summing the sixteen partial sums of each
-# result in the x87 unit exactly as the C worker did, so that a result
-# is the same float to the bit. See rows.md.
+# result on the vector unit (SUM16, matmul.inc). No instruction of this
+# file runs in the x87 unit since 2026-11-09. See rows.md.
 
 	.include "defs.inc"
 	.include "proto.inc"
@@ -646,49 +646,6 @@ fused_setup:
 
 # ---- the rows of a quantized matrix ----
 
-# half_to_float: the float32 bits of the half in di, in eax (integer
-# exact, as the C's half_to_float). Clobbers ecx, edx.
-	.globl half_to_float
-half_to_float:
-	movzwl %di, %eax
-	movl %eax, %ecx
-	andl $0x8000, %ecx
-	shll $16, %ecx				# sign
-	movl %eax, %edx
-	shrl $10, %edx
-	andl $0x1f, %edx			# exponent
-	andl $0x3ff, %eax			# mantissa
-	testl %edx, %edx
-	jnz 2f
-	testl %eax, %eax
-	jnz 1f
-	movl %ecx, %eax
-	ret
-1:	movl $113, %edx				# subnormal: normalise
-11:	testl $0x400, %eax
-	jnz 12f
-	shll $1, %eax
-	decl %edx
-	jmp 11b
-12:	andl $0x3ff, %eax
-	shll $13, %eax
-	shll $23, %edx
-	orl %edx, %eax
-	orl %ecx, %eax
-	ret
-2:	cmpl $31, %edx
-	jne 3f
-	shll $13, %eax
-	orl $0x7f800000, %eax
-	orl %ecx, %eax
-	ret
-3:	addl $112, %edx
-	shll $23, %edx
-	shll $13, %eax
-	orl %edx, %eax
-	orl %ecx, %eax
-	ret
-
 # The frame of rows_range_q, addressed through rbp (its aligned base):
 # the accumulators, the kernels' scratch table, a group's row pointers,
 # then the loop's variables.
@@ -725,8 +682,9 @@ half_to_float:
 # chunk the groups outermost (a group's activation rows are read from L2
 # for every weight row of the chunk); within a group the superblock
 # outermost (its activation block and the accumulators stay in L1 across
-# the rows, the weights stream); then each result summed in the x87 unit
-# and stored.
+# the rows, the weights stream); then a Q8_0 row's last blocks added to
+# its accumulator (q8_0_tail), each result summed on the vector unit
+# (SUM16) and stored as its four bytes.
 	.globl rows_range_q
 rows_range_q:
 	pushq %rbp
@@ -895,26 +853,12 @@ rows_range_q:
 	movq %rsi, %rax
 	shlq $6, %rax
 	addq RQ_A(%rbp), %rax			# acc + q * 16 floats
-	fldz
-	fadds 0(%rax)
-	fadds 4(%rax)
-	fadds 8(%rax)
-	fadds 12(%rax)
-	fadds 16(%rax)
-	fadds 20(%rax)
-	fadds 24(%rax)
-	fadds 28(%rax)
-	fadds 32(%rax)
-	fadds 36(%rax)
-	fadds 40(%rax)
-	fadds 44(%rax)
-	fadds 48(%rax)
-	fadds 52(%rax)
-	fadds 56(%rax)
-	fadds 60(%rax)
 	cmpq $0, RQ_TAIL(%rbp)
-	je 25f
-	# q8_0_tail(blk = base + r * nb_a + ns * bb, x = g->x[c0 + q] + ns * xblock, tail / 32, b_type)
+	je 24f
+	# q8_0_tail(blk = base + r * nb_a + ns * bb, x = g->x[c0 + q] + ns * xblock, tail / 32, b_type, acc, scratch):
+	# the row's last blocks into the accumulator, before it is summed
+	movq %rax, %r8
+	leaq RQ_SCRATCH(%rbp), %r9
 	movq RQ_G(%rbp), %rdx
 	movq G_A(%rdx), %rdi
 	movq RQ_R(%rbp), %rax
@@ -935,7 +879,13 @@ rows_range_q:
 	shrq $5, %rdx
 	movl MJ_B_TYPE(%rbx), %ecx
 	call q8_0_tail
-25:	movq RQ_G(%rbp), %rdx
+	movq RQ_Q(%rbp), %rax
+	shlq $6, %rax
+	addq RQ_A(%rbp), %rax			# acc + q * 16 floats again
+24:	SUM16 rax				# on the vector unit: every lane of zmm0 the sum
+	leaq RQ_SCRATCH(%rbp), %rcx
+	VMOVAPS_ST rcx, 0, zmm0			# the kernels' scratch is free here; lane 0 is the result
+	movq RQ_G(%rbp), %rdx
 	movq RQ_C0(%rbp), %rcx
 	addq RQ_Q(%rbp), %rcx
 	movl G_DST(%rdx,%rcx,4), %eax
@@ -943,7 +893,8 @@ rows_range_q:
 	addq %r12, %rax
 	addq RQ_R(%rbp), %rax
 	movq MJ_D(%rbx), %rdx
-	fstps (%rdx,%rax,4)
+	movl RQ_SCRATCH(%rbp), %ecx		# the float's four bytes: no scalar float unit
+	movl %ecx, (%rdx,%rax,4)
 	incq RQ_Q(%rbp)
 	jmp 22b
 29:	movq RQ_T(%rbp), %rax
@@ -966,72 +917,43 @@ rows_range_q:
 	popq %rbp
 	ret
 
-# q8_0_tail: the blocks of a Q8_0 row past the last superblock (a row may
-# end with fewer than eight 34-byte blocks). With the row's partial sum in
-# st(0): for each of edx blocks at rdi against the activations at rsi
-# (float32, or float16 when ecx is 1), s = the sum over 32 of q * x, then
-# tail += d * s; at the end st(0) += tail. Every step in the x87 unit as
-# the C compiled it: the integer multiply by the signed byte widened to
-# 16 bits, the block scale d from its half, nothing rounded before the
-# caller's store. Returns with the sum in st(0).
+# q8_0_tail(blk rdi, x rsi, n edx, b_type ecx, acc r8, scratch r9): the
+# blocks of a Q8_0 row past the last superblock (a row may end with fewer
+# than eight 34-byte blocks), added into the row's sixteen partial sums at
+# acc before they are summed, on the vector unit. Per block: the scale's
+# half up-converted into lane 0 and stored to the scratch, the 32 signed
+# bytes as two vectors of floats, their products with the activations
+# (float32, or float16 when ecx is 1) added, and that times the scale,
+# broadcast from the scratch, into the accumulator. Clobbers rax, rdx,
+# rdi, rsi, zmm0, zmm8, zmm9, zmm16, k1.
 q8_0_tail:
-	pushq %rbx
-	pushq %r12
-	pushq %r13
-	pushq %r14
-	pushq %r15
-	subq $16, %rsp
-	movq %rdi, %rbx				# blk
-	movq %rsi, %r12				# x
-	movl %edx, %r13d			# nblocks
-	movl %ecx, %r14d			# b_type
-	xorl %r15d, %r15d			# i
-	fldz					# tail
-1:	cmpl %r13d, %r15d
-	jge 9f
-	movl %r15d, %eax
-	imull $34, %eax, %eax
-	movzwl (%rbx,%rax), %edi
-	call half_to_float
-	movl %eax, 8(%rsp)			# d
-	fldz					# s
-	xorl %ecx, %ecx				# j
-2:	cmpl $32, %ecx
-	jge 4f
-	movl %r15d, %eax
-	shll $5, %eax
-	addl %ecx, %eax				# at = 32 i + j
-	testl %r14d, %r14d
-	jz 3f
-	pushq %rcx
-	movzwl (%r12,%rax,2), %edi
-	call half_to_float
-	popq %rcx
-	movl %eax, 12(%rsp)
-	flds 12(%rsp)
-	jmp 31f
-3:	flds (%r12,%rax,4)			# xv
-31:	movl %r15d, %eax
-	imull $34, %eax, %eax
-	leal 2(%rax,%rcx), %eax
-	movsbw (%rbx,%rax), %ax
-	movw %ax, (%rsp)
-	fimuls (%rsp)				# xv * q
-	faddp %st, %st(1)			# s +=
-	incl %ecx
-	jmp 2b
-4:	flds 8(%rsp)				# d
-	fmulp %st, %st(1)			# d * s
-	faddp %st, %st(1)			# tail +=
-	incl %r15d
+	VMOVAPS zmm0, r8, 0
+	movl $1, %eax
+	KMOV_KR k1, eax
+1:	testl %edx, %edx
+	jz 9f
+	VPXORD zmm16, zmm16, zmm16
+	VLOADUNPACKLPS zmm16, rdi, 0, conv=CV_F16, k=k1
+	VLOADUNPACKHPS zmm16, rdi, 64, conv=CV_F16, k=k1
+	VMOVAPS_ST r9, 0, zmm16			# d, for the broadcast below
+	VLOADUNPACKLPS zmm8, rdi, 2, conv=CV_S8
+	VLOADUNPACKHPS zmm8, rdi, 66, conv=CV_S8
+	VLOADUNPACKLPS zmm9, rdi, 18, conv=CV_S8
+	VLOADUNPACKHPS zmm9, rdi, 82, conv=CV_S8
+	testl %ecx, %ecx
+	jnz 2f
+	VMULPS zmm8, zmm8, rsi, 0
+	VFMADD231PS zmm8, zmm9, rsi, 64
+	addq $128, %rsi
+	jmp 3f
+2:	VMULPS zmm8, zmm8, rsi, 0, conv=CV_F16
+	VFMADD231PS zmm8, zmm9, rsi, 32, conv=CV_F16
+	addq $64, %rsi
+3:	VFMADD231PS zmm0, zmm8, r9, 0, conv=CV_1TO16
+	addq $34, %rdi
+	decl %edx
 	jmp 1b
-9:	faddp %st, %st(1)			# sum += tail
-	addq $16, %rsp
-	popq %r15
-	popq %r14
-	popq %r13
-	popq %r12
-	popq %rbx
+9:	VMOVAPS_ST r8, 0, zmm0
 	ret
 
 # ---- a slice's work ----

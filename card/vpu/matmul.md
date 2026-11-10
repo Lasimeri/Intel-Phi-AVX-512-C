@@ -46,8 +46,9 @@ what is where in the assembly and what its gates were.
   constants, which was padding.
 - **The float weight types** (`rows_slice`, `rows_slice_id`): a row
   against four activation rows (`phi_dot4_*`) or one (`phi_dot_*`), the
-  sixteen sums and the row's last `k % 16` elements in the x87 unit
-  exactly as the C (`rows.md`, "The sums"). A request of several
+  row's last `k % 16` elements added to the sixteen partial sums by one
+  masked expand-load and multiply (`tail_dot`), the sums added on the
+  vector unit (`rows.md`, "The sums"). A request of several
   matrices (`VPU_K_MATMUL_MORE`) with a float base takes pieces of the
   base's own type only (`r_fmore`; a quantized base takes quantized
   pieces of any type, as before) and runs them by `rows_slice_multi_f`:
