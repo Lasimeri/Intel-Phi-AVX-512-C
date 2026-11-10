@@ -89,6 +89,70 @@ Every one of these prints the lines the C printed under
 the feed-forward's host part), with `w_elapsed_ms` giving C's `%.3f`
 of the elapsed milliseconds.
 
+## A multiply issued ahead of its node (`PHI_GGML_AHEAD`, 2026-11-09)
+
+ggml hands this backend one sub-graph at a time, and a model's graph
+puts other backends' nodes between two multiplies that read the same
+activations (a layer's `attn_qkv` and `attn_gate` both read `attn_norm`;
+`attn_q`, `attn_v` and `attn_k` likewise): the second is begun only
+after the first one's result has been copied to the GPU, worked on
+there and the scheduler has come back, though its input was there all
+along. With `PHI_GGML_AHEAD=1` the cards do not wait for that.
+
+| step | where | what |
+| --- | --- | --- |
+| learn | `run_mul_mat`, on entry | under the weight of the multiply before this one (`ah_prev`), `ah_succ` keeps this one's weight, activations' address, rows, columns, row stride, card type and `keep`: 2048 entries of 64 bytes by the weight's address (`ah_slot`: eight places tried) |
+| issue ahead | `run_mul_mat`, after `phi_ggml_end` | when the entry under this weight names activations at the address this multiply read: the activations copied to `ah_copy`, `phi_ggml_begin` for that multiply at once, its arguments kept (`ah_a`, `ah_x`, `ah_n`, `ah_nb_b`, `ah_m`, `ah_nr`), `ah_valid` set; the return to ggml leaves its request with the cards |
+| take | `run_mul_mat`, on entry, `ah_valid` set | the node's weight, its activations' address, their count and stride, its rows, and the activations' bytes against `ah_copy` (`repe cmpsb`): all equal, the node skips `phi_ggml_begin` and goes to its host ranges and `phi_ggml_end` |
+| drop | `ahead_drain` | any difference: `phi_ggml_end` into `ah_drain`, and the node runs as it always did; also at the top of `run_ffn`, `run_id_pair` and `run_mul_mat_id`, which ring the cards themselves |
+
+What makes it safe:
+
+- A wrong guess costs a multiply, never a result: the node's request is
+  the one issued ahead only when every argument and every byte of its
+  input is what that request was begun with.
+- `phi_ggml_begin` takes the backend's lock and drops it before it
+  returns (`backend.S`, `begin_common`); between it and `phi_ggml_end`
+  the multiply lives in the backend's statics, as it does inside
+  `run_mul_mat`, and nothing else enters the backend while a graph is
+  computed.
+- The window's doorbell lock stays taken from the request to its reply
+  (`../common/window.md`). Its only other user is a DMA router's fault
+  handler, which is asked for a card's rows when a batch is computed on
+  a GPU from the host's mapping; this backend declines those batches
+  whole, so no fault of that kind falls inside a pass that has a
+  multiply outstanding.
+- A multiply is begun ahead only when its activations are at the
+  address the finished one read, so none is left outstanding at the end
+  of a pass: the next pass's first multiply reads another tensor.
+- It needs `PHI_GGML_OFFLOAD` (`ahead_enabled` says so and stays off
+  without it): outside the offload `phi_ggml_end` times a multiply from
+  its `phi_ggml_begin` and judges the tensor by it, and a request left
+  running across ggml's other work would be counted against its tensor.
+
+The copy is 1 MiB and the drop buffer 8 MiB (`AH_COPY_MAX`,
+`AH_DRAIN_MAX`); a multiply whose activations or results would not fit
+is not begun ahead. `ah_report` says the two counts at 256 multiplies
+taken and then every 16384 (`ahead: N multiplies were with the cards
+before their node arrived, M begun ahead were not what came`).
+
+Measured on card 0 with a 27 B Q4_0 model, one server, the GPU doing
+every node but the multiplies, the cards holding every row of 60
+layers, 64 tokens a run, four runs each, the plain runs first:
+
+| | plain | `PHI_GGML_AHEAD=1` |
+| --- | --- | --- |
+| 64 tokens | 25.979, 25.703, 25.423, 24.791 s | 24.802, 24.055, 24.061, 24.019 s |
+| tokens a second | 2.425 to 2.541 | 2.540 to 2.623 |
+| the card's compute time | 20.09 to 20.18 s | 20.04 to 20.09 s |
+| the output at temperature 0, 24 tokens with the top five log-probabilities of each | the reference (two runs equal) | the same bytes (two runs) |
+
+The mean falls from 25.474 to 24.234 s (5.1 %) with the card's compute
+time unchanged: the time between its multiplies is what shrank, about
+19 ms a token. 16384 multiplies had been taken and none dropped when
+the count was last said. The two sets were not interleaved, and their
+ranges touch (24.791 and 24.802 s).
+
 ## The host's rows
 
 `host_backend` creates the private CPU backend once: `ggml_backend_dev_by_type(CPU)`,

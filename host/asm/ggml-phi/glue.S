@@ -19,6 +19,22 @@
 	.set BE_USED, BE_BYTES
 	.set BE_SLOTS, 8
 
+# A multiply issued ahead of its node (PHI_GGML_AHEAD, glue.md): what
+# followed each weight last time, by the weight's address, and the two
+# buffers the scheme needs.
+	.set AH_SLOTS, 2048
+	.set AH_BYTES, 64
+	.set AH_KEY, 0				# a weight
+	.set AH_A, 8				# the weight multiplied after it
+	.set AH_X, 16				# that multiply's activations
+	.set AH_M, 24
+	.set AH_K, 32
+	.set AH_NB_A, 40
+	.set AH_TYPE, 48			# the card's type (4 bytes)
+	.set AH_KEEP, 52			# (4 bytes)
+	.set AH_COPY_MAX, 1048576
+	.set AH_DRAIN_MAX, 8388608
+
 	.bss
 	.balign 64
 g_cpu:	.skip 8				# the private CPU backend
@@ -27,6 +43,19 @@ tables_ready:	.skip 4
 ffn_on:	.skip 4				# -1 unasked, 0, 1
 graph_left:	.skip 4			# PHI_GGML_GRAPH sub-graphs still to dump (-1 unasked)
 verbose_on:	.skip 4			# -1 unasked
+ahead_on:	.skip 4			# PHI_GGML_AHEAD: -1 unasked, 0, 1
+	.balign 8
+ah_prev:	.skip 8			# the weight of the multiply before this one
+ah_valid:	.skip 8			# a multiply is issued ahead of its node
+ah_a:	.skip 8				# its weight
+ah_x:	.skip 8				# its activations
+ah_n:	.skip 8
+ah_nb_b:	.skip 8
+ah_m:	.skip 8
+ah_nr:	.skip 8				# its host ranges
+ah_bytes:	.skip 8			# of the activations kept in ah_copy
+ah_taken:	.skip 8			# multiplies that were with the cards before their node
+ah_dropped:	.skip 8			# begun ahead, and not what came
 	.balign 64
 phi_reg:	.skip REG_BYTES
 	.balign 64
@@ -50,6 +79,12 @@ scratch:	.skip 16			# the host's feed-forward intermediates (gbuf)
 ranges:	.skip 34 * 16			# the host's ranges of a block or a pair
 which:	.skip 34 * 4
 ffn_args:	.skip FA_BYTES
+	.balign 64
+ah_succ:	.skip AH_SLOTS * AH_BYTES	# what followed each weight last time
+	.balign 64
+ah_copy:	.skip AH_COPY_MAX		# the activations a multiply was issued ahead with
+	.balign 64
+ah_drain:	.skip AH_DRAIN_MAX		# where the results of one nothing asked for go
 
 	.section .rodata
 phi_guid:	.byte 0x70, 0x68, 0x69, 0x33, 0x31, 0x32, 0x30, 0x61, 0x76, 0x78, 0x35, 0x31, 0x32, 0x6b, 0x6e, 0x63
@@ -67,6 +102,12 @@ e_ffn:	.asciz "PHI_GGML_FFN"
 e_offload:	.asciz "PHI_GGML_OFFLOAD"
 e_graph:	.asciz "PHI_GGML_GRAPH"
 e_verbose:	.asciz "PHI_GGML_VERBOSE"
+e_ahead:	.asciz "PHI_GGML_AHEAD"
+s_ahead_on:	.asciz "a multiply whose activations are ready is issued ahead of its node (PHI_GGML_AHEAD)"
+s_ahead_off:	.asciz "PHI_GGML_AHEAD needs PHI_GGML_OFFLOAD (without it a multiply is timed from its start and judged)"
+s_ah1:	.asciz "ahead: "
+s_ah2:	.asciz " multiplies were with the cards before their node arrived, "
+s_ah3:	.asciz " begun ahead were not what came"
 s_no_cpu:	.asciz "no CPU device registered"
 s_no_cpu_init:	.asciz "the CPU backend would not initialise"
 s_pool1:	.asciz "the host's rows have a threadpool of their own (poll "
@@ -1698,8 +1739,112 @@ find_quad:
 	popq %rbp
 	ret
 
+# ahead_enabled: PHI_GGML_AHEAD=1 under PHI_GGML_OFFLOAD (asked once,
+# and said once either way); eax.
+ahead_enabled:
+	cmpl $-1, ahead_on(%rip)
+	jne 9f
+	pushq %rbx
+	leaq e_ahead(%rip), %rdi
+	xorl %esi, %esi
+	call env_u64
+	movl %eax, %ebx
+	testl %ebx, %ebx
+	jz 1f
+	movl $1, %ebx
+	leaq e_offload(%rip), %rdi
+	xorl %esi, %esi
+	call env_u64
+	testl %eax, %eax
+	jnz 2f
+	leaq s_ahead_off(%rip), %rsi
+	call say
+	xorl %ebx, %ebx
+	jmp 1f
+2:	leaq s_ahead_on(%rip), %rsi
+	call say
+1:	movl %ebx, ahead_on(%rip)
+	popq %rbx
+9:	movl ahead_on(%rip), %eax
+	ret
+
+# ah_slot(rdi weight): its entry of ah_succ in rax: the one that has it
+# for a key, else the first empty one of eight from its place, else its
+# place (to be overwritten). Clobbers rcx, rdx, rsi, r8.
+ah_slot:
+	movq %rdi, %rax
+	shrq $14, %rax
+	movq %rdi, %rcx
+	shrq $25, %rcx
+	xorq %rcx, %rax
+	andl $AH_SLOTS - 1, %eax
+	movl %eax, %edx				# its place
+	movl $8, %ecx
+	leaq ah_succ(%rip), %r8
+1:	movl %eax, %esi
+	shlq $6, %rsi
+	addq %r8, %rsi
+	cmpq %rdi, AH_KEY(%rsi)
+	je 2f
+	cmpq $0, AH_KEY(%rsi)
+	je 2f
+	incl %eax
+	andl $AH_SLOTS - 1, %eax
+	decl %ecx
+	jnz 1b
+	movl %edx, %esi
+	shlq $6, %rsi
+	addq %r8, %rsi
+2:	movq %rsi, %rax
+	ret
+
+# ahead_drain: a multiply issued ahead that the node now here is not:
+# its results go to ah_drain, so the card's one request slot (and the
+# window's doorbell lock) is free for what comes; eax 0 or -1.
+ahead_drain:
+	xorl %eax, %eax
+	cmpq $0, ah_valid(%rip)
+	je 9f
+	movq $0, ah_valid(%rip)
+	incq ah_dropped(%rip)
+	subq $8, %rsp
+	leaq ah_drain(%rip), %rdi
+	movq ah_m(%rip), %rsi
+	shlq $2, %rsi
+	call phi_ggml_end
+	addq $8, %rsp
+9:	ret
+
+# ah_report: the scheme's two counts so far, as one line.
+ah_report:
+	subq $8, %rsp
+	call say_begin
+	leaq s_ah1(%rip), %rsi
+	call w_str
+	movq ah_taken(%rip), %rdi
+	call w_dec
+	leaq s_ah2(%rip), %rsi
+	call w_str
+	movq ah_dropped(%rip), %rdi
+	call w_dec
+	leaq s_ah3(%rip), %rsi
+	call w_str
+	call l_end
+	addq $8, %rsp
+	ret
+
 # run_mul_mat(rdi node): one multiply the plain way: the cards start,
 # the host's ranges here, the cards' rows gathered; eax 0 or -1.
+#
+# Under PHI_GGML_AHEAD the cards do not wait for the host between two
+# multiplies that read the same activations: when this one is done, the
+# multiply that followed its weight last time is begun at once if it
+# reads the activations this one read (ah_succ, learned at every call),
+# and the node that then arrives finds its request already with the
+# cards. It is that node's only when the weight, the activations'
+# address, their count and stride, the rows, and the activations' bytes
+# (kept in ah_copy) are the ones it was begun with; otherwise its results
+# are dropped (ahead_drain) and the node runs as it always did.
 run_mul_mat:
 	pushq %rbp
 	movq %rsp, %rbp
@@ -1717,7 +1862,67 @@ run_mul_mat:
 	movl %eax, %r14d			# keep
 	movl T_TYPE(%r12), %edi
 	call card_type
-	movl %eax, %esi
+	movl %eax, -64(%rbp)			# the card's type
+	call ahead_enabled
+	testl %eax, %eax
+	jz 20f
+	# this multiply follows the last one: remembered under that one's weight
+	movq ah_prev(%rip), %rdi
+	testq %rdi, %rdi
+	jz 11f
+	call ah_slot
+	movq ah_prev(%rip), %rcx
+	movq %rcx, AH_KEY(%rax)
+	movq T_DATA(%r12), %rcx
+	movq %rcx, AH_A(%rax)
+	movq T_DATA(%r13), %rcx
+	movq %rcx, AH_X(%rax)
+	movq T_NE+8(%r12), %rcx
+	movq %rcx, AH_M(%rax)
+	movq T_NE(%r12), %rcx
+	movq %rcx, AH_K(%rax)
+	movq T_NB+8(%r12), %rcx
+	movq %rcx, AH_NB_A(%rax)
+	movl -64(%rbp), %ecx
+	movl %ecx, AH_TYPE(%rax)
+	movl %r14d, AH_KEEP(%rax)
+11:	# is this the multiply that was issued ahead?
+	cmpq $0, ah_valid(%rip)
+	je 20f
+	movq T_DATA(%r12), %rax
+	cmpq ah_a(%rip), %rax
+	jne 15f
+	movq T_DATA(%r13), %rax
+	cmpq ah_x(%rip), %rax
+	jne 15f
+	movq T_NE+8(%r13), %rax
+	cmpq ah_n(%rip), %rax
+	jne 15f
+	movq T_NB+8(%r13), %rax
+	cmpq ah_nb_b(%rip), %rax
+	jne 15f
+	movq T_NE+8(%r12), %rax
+	cmpq ah_m(%rip), %rax
+	jne 15f
+	movq T_DATA(%r13), %rsi			# the activations here against the ones it was begun with
+	leaq ah_copy(%rip), %rdi
+	movq ah_bytes(%rip), %rcx
+	repe cmpsb
+	jne 15f
+	movq $0, ah_valid(%rip)			# it is: its host ranges, then its end
+	incq ah_taken(%rip)
+	movq ah_taken(%rip), %rax		# the count said at 256 and then every 16384
+	cmpq $256, %rax
+	je 12f
+	testq $16383, %rax
+	jnz 13f
+12:	call ah_report
+13:	movq ah_nr(%rip), %r15
+	jmp 21f
+15:	call ahead_drain			# it is not
+	testl %eax, %eax
+	jnz 9f
+20:	movl -64(%rbp), %esi
 	movq T_DATA(%r12), %rdi
 	movq T_NE+8(%r12), %rdx
 	movq T_NE(%r12), %rcx
@@ -1735,7 +1940,7 @@ run_mul_mat:
 	testq %rax, %rax
 	js 9f
 	movq %rax, %r15				# nr
-	xorl %r14d, %r14d			# r
+21:	xorl %r14d, %r14d			# r
 1:	cmpq %r15, %r14
 	jge 3f
 	movq %r14, %rdi
@@ -1759,7 +1964,65 @@ run_mul_mat:
 	call phi_ggml_end
 	testl %eax, %eax
 	jnz 9f
-	xorl %eax, %eax
+	call ahead_enabled
+	testl %eax, %eax
+	jz 30f
+	# the multiply that followed this weight last time, when it reads the
+	# activations this one read: begun now, ahead of its node
+	movq T_DATA(%r12), %rdi
+	movq %rdi, ah_prev(%rip)
+	call ah_slot
+	movq T_DATA(%r12), %rcx
+	cmpq %rcx, AH_KEY(%rax)
+	jne 30f
+	movq T_DATA(%r13), %rcx
+	cmpq %rcx, AH_X(%rax)
+	jne 30f
+	movq %rax, %r14				# the entry
+	movq T_NE+8(%r13), %rax			# the activations' bytes: n * nb_b, kept for the check
+	imulq T_NB+8(%r13), %rax
+	cmpq $AH_COPY_MAX, %rax
+	ja 30f
+	movq AH_M(%r14), %rcx			# its results' bytes: m * n floats, should they be dropped
+	imulq T_NE+8(%r13), %rcx
+	shlq $2, %rcx
+	cmpq $AH_DRAIN_MAX, %rcx
+	ja 30f
+	movq %rax, ah_bytes(%rip)
+	leaq ah_copy(%rip), %rdi
+	movq T_DATA(%r13), %rsi
+	movq %rax, %rdx
+	call mem_copy
+	movq AH_A(%r14), %rdi
+	movl AH_TYPE(%r14), %esi
+	movq AH_M(%r14), %rdx
+	movq AH_K(%r14), %rcx
+	movq AH_NB_A(%r14), %r8
+	movl AH_KEEP(%r14), %r9d
+	subq $32, %rsp
+	movq T_DATA(%r13), %rax
+	movq %rax, (%rsp)
+	movq T_NE+8(%r13), %rax
+	movq %rax, 8(%rsp)
+	movq T_NB+8(%r13), %rax
+	movq %rax, 16(%rsp)
+	call phi_ggml_begin
+	addq $32, %rsp
+	testq %rax, %rax
+	js 30f					# refused: nothing is with the cards
+	movq %rax, ah_nr(%rip)
+	movq AH_A(%r14), %rax
+	movq %rax, ah_a(%rip)
+	movq AH_M(%r14), %rax
+	movq %rax, ah_m(%rip)
+	movq T_DATA(%r13), %rax
+	movq %rax, ah_x(%rip)
+	movq T_NE+8(%r13), %rax
+	movq %rax, ah_n(%rip)
+	movq T_NB+8(%r13), %rax
+	movq %rax, ah_nb_b(%rip)
+	movq $1, ah_valid(%rip)
+30:	xorl %eax, %eax
 	jmp 99f
 9:	movl $-1, %eax
 99:	leaq -40(%rbp), %rsp
@@ -1785,6 +2048,7 @@ run_ffn:
 	subq $24, %rsp
 	movq %rdi, %rbx
 	movq %rsi, %r12
+	call ahead_drain			# nothing issued ahead stays with the cards
 	movslq Q_GATE(%r12), %rax
 	movq (%rbx,%rax,8), %r13		# gate
 	movslq Q_UP(%r12), %rax
@@ -2046,6 +2310,7 @@ run_id_pair:
 	subq $40, %rsp
 	movq %rdi, %rbx				# x
 	movq %rsi, %r12				# y
+	call ahead_drain			# nothing issued ahead stays with the cards
 	movq T_SRC(%rbx), %r13			# w1
 	movq T_SRC(%r12), %r14			# w2
 	movq T_SRC+8(%rbx), %r15		# src1
@@ -2180,6 +2445,7 @@ run_mul_mat_id:
 	pushq %r15
 	subq $56, %rsp
 	movq %rdi, %rbx
+	call ahead_drain			# nothing issued ahead stays with the cards
 	movq T_SRC(%rbx), %r12			# src0
 	movq T_SRC+8(%rbx), %r13		# src1
 	movq T_SRC+16(%rbx), %r14		# ids
@@ -2726,6 +2992,7 @@ ggml_backend_phi_reg:
 	movl $-1, ffn_on(%rip)
 	movl $-1, graph_left(%rip)
 	movl $-1, verbose_on(%rip)
+	movl $-1, ahead_on(%rip)
 1:	call tables_init
 	leaq phi_reg(%rip), %rbx
 	movl $GGML_BACKEND_API_VERSION, REG_API_VERSION(%rbx)

@@ -54,6 +54,11 @@ every one; `tools/expert-placement.md` makes the file from a run with
 `PHI_GGML_IDS=1`, which logs every layer's routing),
 `PHI_GGML_SPIN_US` (the wait for a card spins this many microseconds,
 then sleeps between looks; unset, it spins throughout),
+`PHI_GGML_AHEAD` (1, with the offload: when a multiply is done, the one
+that followed its weight last time is begun at once if it reads the same
+activations, so the cards work while the host and a GPU handle the
+result before; a guess that is wrong is dropped and costs no result:
+`host/asm/ggml-phi/glue.md`),
 `PHI_GGML_JUDGE` (0: no tensor is moved by its timings; with
 `PHI_GGML_PP_ADAPT=0` the same request gives the same output),
 `PHI_GGML_HOST_THREADS` (the host's threads for its rows, 12: leave the
