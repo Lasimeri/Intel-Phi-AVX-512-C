@@ -125,10 +125,14 @@ What makes it safe:
 - A multiply is begun ahead only when its activations are at the
   address the finished one read, so none is left outstanding at the end
   of a pass: the next pass's first multiply reads another tensor.
-- It needs `PHI_GGML_OFFLOAD` (`ahead_enabled` says so and stays off
-  without it): outside the offload `phi_ggml_end` times a multiply from
-  its `phi_ggml_begin` and judges the tensor by it, and a request left
-  running across ggml's other work would be counted against its tensor.
+- It needs `PHI_GGML_OFFLOAD` or `PHI_GGML_JUDGE=0` (`ahead_enabled`
+  says so and stays off without either): where tensors are judged,
+  `phi_ggml_end` times a multiply from its `phi_ggml_begin` and judges
+  the tensor by it, and a request left running across ggml's other work
+  would be counted against its tensor. With the judge off nothing is
+  timed for a verdict, and the run-ahead works with the weights kept in
+  host RAM as well (since 2026-11-10; `backend.md`, "Every row on the
+  cards with the weights still in host RAM").
 
 The copy is 1 MiB and the drop buffer 8 MiB (`AH_COPY_MAX`,
 `AH_DRAIN_MAX`); a multiply whose activations or results would not fit

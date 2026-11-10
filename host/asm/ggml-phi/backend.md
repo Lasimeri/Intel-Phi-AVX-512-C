@@ -22,7 +22,7 @@ variables (every one with its Rust default):
 | `PHI_GGML_MIN_BYTES` | 4000000 | the weights a multiply must take off the host before a card is worth its round trip |
 | `PHI_GGML_ACT` | 1 | activations as float16 |
 | `PHI_GGML_OFFLOAD` | 0 | the cards' rows are theirs alone and their pages are dropped |
-| `PHI_GGML_ALL_ROWS` | 0 | with the offload, the cards may keep every row |
+| `PHI_GGML_ALL_ROWS` | 0 | with the offload, or with `PHI_GGML_JUDGE=0` (since 2026-11-10: nothing is judged, so the host needs no rows of its own), the cards may keep every row |
 | `PHI_GGML_EXPERTS` | unset | a placement file: whole experts on the cards. Under the offload the cards' experts are theirs alone (their pages dropped); without it (since 2026-10-06) the host keeps its copy of every expert, so a batch handed to a GPU by llama.cpp's op offload reads it while a generation step skips the cards' experts through the substituted ids, and the judge is forced off (a tensor judged back to the host would be computed in full there) |
 | `PHI_GGML_JUDGE` | 1 | tensors judged by their timings |
 | `PHI_GGML_TG_ONLY` | 0 | `K`: the inverse: a multiply of more than K tokens (a mixture's tokens) stays with the host, so the prompts stay with the GPUs and the host (llama.phi's prefill engine) and the cards take the generation steps alone (2026-10-06, the user's split for the rack). K is the sequences that generate at once (llama-server's slots): a step of two slots is a two-token multiply, which `K=1` kept off the cards (seen the same night in the two-process server) |
@@ -200,6 +200,35 @@ experts of each layer's 256 (12.92 GB), a 1,410-token prompt on an RTX 3090 Ti:
 the file, 0 differing); the first generated token's log-probabilities are the
 same to the last digit either way; the disk read during a 220-token generation fell
 from 1,836 to 437 MiB.
+
+## Every row on the cards with the weights still in host RAM (2026-11-10)
+
+`PHI_GGML_ALL_ROWS=1` asked for the offload because the judgement of a
+tensor needs rows the host computes. With `PHI_GGML_JUDGE=0` nothing is
+judged, and the cards may keep every row while the host keeps its copy
+(`PHI_GGML_OFFLOAD=0`): a prompt computed on a GPU then reads host
+memory only. `PHI_GGML_AHEAD` is allowed in the same case (`glue.md`).
+
+Measured on a 9 B Q8_0 model whose file was wholly in host memory, card
+0 (a 7120A), an RTX 3090 Ti holding the context and taking the prompts,
+14 host threads, the host's small operations on (`PHI_GGML_HOSTOPS=1`),
+220 generated tokens:
+
+| the card holds | generation |
+| --- | --- |
+| nothing (the host alone, without this backend) | 4.09, 4.02 tok/s |
+| 50.0 % of every dense matrix's rows (4.35 GB), judged | 6.55, 6.45, 6.37 tok/s |
+| every row (8.14 GB), judge off, run-ahead on | 5.73 tok/s (one run) |
+| nothing resident: 15.6 % of every matrix streamed (`PHI_GGML_STREAM`) | 4.14, 4.20, 4.19 tok/s |
+
+With half the rows the timeline (`PHI_GGML_TIME`) has the host's rows at
+55.4 % of the time, the host's small operations at 30.8 % and the wait
+for the card at 1.1 %: the host is the slower side. With every row the
+card is, and the result is lower than the shared one; the 24 tokens at
+temperature 0 are the same in both. No share between the two was
+measured. Streamed, no multiply went to the card after the first
+tokens (the time spent issuing stays at 0.49 s over the next 57,344
+sub-graphs), and the result is the host's.
 
 ## Streamed weights (`PHI_GGML_STREAM`, 2026-11-06)
 

@@ -153,7 +153,8 @@ e_graph:	.asciz "PHI_GGML_GRAPH"
 e_verbose:	.asciz "PHI_GGML_VERBOSE"
 e_ahead:	.asciz "PHI_GGML_AHEAD"
 s_ahead_on:	.asciz "a multiply whose activations are ready is issued ahead of its node (PHI_GGML_AHEAD)"
-s_ahead_off:	.asciz "PHI_GGML_AHEAD needs PHI_GGML_OFFLOAD (without it a multiply is timed from its start and judged)"
+s_ahead_off:	.asciz "PHI_GGML_AHEAD needs PHI_GGML_OFFLOAD or PHI_GGML_JUDGE=0 (otherwise a multiply is timed from its start and judged)"
+e_judge_g:	.asciz "PHI_GGML_JUDGE"
 s_ah1:	.asciz "ahead: "
 s_ah2:	.asciz " multiplies were with the cards before their node arrived, "
 s_ah3:	.asciz " begun ahead were not what came"
@@ -1800,7 +1801,7 @@ find_quad:
 	popq %rbp
 	ret
 
-# ahead_enabled: PHI_GGML_AHEAD=1 under PHI_GGML_OFFLOAD (asked once,
+# ahead_enabled: PHI_GGML_AHEAD=1 under PHI_GGML_OFFLOAD or with the judge off (asked once,
 # and said once either way); eax.
 ahead_enabled:
 	cmpl $-1, ahead_on(%rip)
@@ -1818,6 +1819,12 @@ ahead_enabled:
 	call env_u64
 	testl %eax, %eax
 	jnz 2f
+	# or with nothing judged (PHI_GGML_JUDGE=0): no timing to spoil
+	leaq e_judge_g(%rip), %rdi
+	movl $1, %esi
+	call env_u64
+	testl %eax, %eax
+	jz 2f
 	leaq s_ahead_off(%rip), %rsi
 	call say
 	xorl %ebx, %ebx

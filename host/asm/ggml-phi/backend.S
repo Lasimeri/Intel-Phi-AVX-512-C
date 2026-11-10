@@ -291,7 +291,7 @@ s_start1:	.asciz " (scripts/phi-vpu.sh -c "
 s_start2:	.asciz " start)"
 s_nocards:	.asciz "no card is up with a worker polling; nothing to share the work with"
 s_clear:	.asciz "could not clear card "
-s_allrows_needs:	.asciz "PHI_GGML_ALL_ROWS needs PHI_GGML_OFFLOAD=1 (the judgement needs host rows): ignored"
+s_allrows_needs:	.asciz "PHI_GGML_ALL_ROWS needs PHI_GGML_OFFLOAD=1 or PHI_GGML_JUDGE=0 (the judgement needs host rows): ignored"
 s_stream_on:	.asciz "stream: every weight stays in host RAM, in the window above the transfer areas; each multiply has the card pull its rows (no upload into the card's memory, no fused feed-forward, no pairs)"
 s_stream_full:	.asciz "stream: the window is full; this tensor stays with the host"
 s_experts_host:	.asciz "whole experts without the offload: the host keeps its copy of every expert (a batch handed to a GPU reads it) and skips the cards' at a generation step; the judge is off"
@@ -1211,6 +1211,13 @@ phi_ggml_open:
 	jz 81f
 	cmpl $0, offload(%rip)
 	jne 81f
+	# without the offload every row may still be the cards' when nothing is
+	# judged (PHI_GGML_JUDGE=0): the host keeps its copy and computes none of it
+	leaq e_judge(%rip), %rdi
+	movl $1, %esi
+	call env_u64
+	testq %rax, %rax
+	jz 81f
 	leaq s_allrows_needs(%rip), %rsi
 	call say
 	movl $0, all_rows(%rip)
