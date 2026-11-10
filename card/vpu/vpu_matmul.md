@@ -38,7 +38,10 @@ activations at `VPU_OFF_MORE`: "A layer's gate and up in one request").
   `K_LAST`, `vpu_fexec.h`). Measured 2026-11-06 on the 7120A: 10 downloads
   of a 32 MiB matrix byte-identical to the upload, 0.81 GB/s card to window
   (each 983,040-byte piece copied into the landing area, then one engine
-  copy, serially), the window to the GPU 13.40 GB/s.
+  copy, serially), the window to the GPU 13.40 GB/s. Since the same day the DMA
+  path fills the landing area with `copy_pool` across the request's threads
+  (`map_threads`), not one core: measured on the card, one core at 100 % and
+  the pool idle was the bound.
 
 Weight types (`VPU_MM_*`, `a_type`): float32 and float16 rows use the
 dot kernels `phi_dot*_f16/bf16/f32` (one row against one or four activation

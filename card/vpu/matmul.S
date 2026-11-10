@@ -276,12 +276,21 @@ push_data:
 	cmpq $983040, %r15			# 15360 lines: under the length field and the landing area
 	jbe 72f
 	movq $983040, %r15
-72:	movq cdma_land(%rip), %rdi
+72:	# the piece into the landing area by the pool (2026-11-06): one core copying
+	# held a download to 0.81 GB/s with the 120 pool threads idle
+	movl %r14d, %edi
+	call map_threads
+	movl %eax, %ecx
+	movq cdma_land(%rip), %rdi
 	movq %rbx, %rsi
 	leaq 63(%r15), %rdx
 	shrq $6, %rdx
-	call phi_copy64
-	xorl %edi, %edi
+	cmpl $1, %ecx
+	jbe 73f
+	call copy_pool
+	jmp 74f
+73:	call phi_copy64
+74:	xorl %edi, %edi
 	movq %r13, %rsi
 	leaq 63(%r15), %rdx
 	andq $-64, %rdx
