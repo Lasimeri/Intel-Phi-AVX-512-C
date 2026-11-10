@@ -38,7 +38,8 @@ and in the script.
    `LLAMA_CPP_DIR`, default `/mnt/raid5/phi/llama.phi`, with both builds)
    and runs the AVX2 twin's op-test natively for the reference.
 4. For each gate: `phi-vpu.sh stop`, then
-   `PHI_VPU_ARGS="-S 1 -C 55 -T 2 -R 128 -s 1000" phi-vpu.sh start 57`,
+   `PHI_VPU_ARGS="-S 1 -C $((cores - 2)) -T 2 -R 128 -s 1000" phi-vpu.sh start $cores`
+   (`cores` from `phi-vpu.sh cores`: `-C 55` and 57 on a 3120A, 59 and 61 on a 7120A),
    then the program with `PHI512_CARD_ATOMICS=1 PHI512_CARDS=N
    LD_PRELOAD=lib.so` under a 900 s timeout.
 5. Restores the worker the card had before (`phi-vpu.sh config`: its huge

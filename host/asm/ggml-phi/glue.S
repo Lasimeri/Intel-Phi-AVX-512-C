@@ -198,7 +198,11 @@ weight_readable:
 
 # ffn_enabled: PHI_GGML_FFN=1, off under PHI_GGML_OFFLOAD (said once).
 ffn_enabled:
-	cmpl $-1, ffn_on(%rip)
+	cmpl $0, stream_on(%rip)		# streamed weights: K_FFN names resident slices
+	je 8f
+	xorl %eax, %eax
+	ret
+8:	cmpl $-1, ffn_on(%rip)
 	jne 9f
 	pushq %rbx
 	leaq e_ffn(%rip), %rdi

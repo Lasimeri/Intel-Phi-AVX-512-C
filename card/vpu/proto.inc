@@ -12,6 +12,7 @@
 	.set OFF_NONCE, 128		# the card alone writes it: the nonce of its DMA channel's open (cdma.md)
 	.set OFF_REPLY, 256
 	.set OFF_STATS, 320		# struct vpu_stats: the worker's running counters, rewritten after every reply (phitop reads them)
+	.set OFF_CDMA_STATS, 192	# the card DMA channel's traffic (cdma_stats: bytes in, bytes out, copies in, copies out), rewritten after every reply (phitop reads it)
 	.set OFF_DATA, 1048576
 	.set MAGIC_LO, 0x52454144
 	.set MAGIC_HI, 0x5650555F

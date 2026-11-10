@@ -94,7 +94,12 @@ phi512_sigill:
 	testq %rax, %rax
 	jnz 97b
 	call alt_check				# on this thread's alternate stack? (one made if none)
-	pushq %rax
+	cmpl $2, %eax				# made just now: this SIGILL runs on the program's stack, where
+	jne 99f					# a region's frames below rsp minus 128 never come back; nothing
+	cmpl $4, 72(%rsp)			# has run yet, so return and let the instruction fault again on
+	je .Lout				# the new stack (its floor 256 KiB lower: region.md)
+	xorl %eax, %eax				# a SIGTRAP keeps the program's stack, as before
+99:	pushq %rax
 	call maps_invalidate			# the mappings read afresh once per fault (elf.S maps_load)
 	popq %rax
 	movq %rax, on_alt(%rip)
@@ -1005,7 +1010,8 @@ alt_install:
 
 # alt_check: eax 1 when this fault's handler runs on the thread's
 # alternate stack; a thread without one gets one for its next faults
-# (this one runs on the program's stack: eax 0).
+# (eax 2: made just now, this fault still on the program's stack; eax 0:
+# none could be made).
 alt_check:
 	subq $40, %rsp
 	xorl %edi, %edi
@@ -1021,6 +1027,11 @@ alt_check:
 	addq $40, %rsp
 	ret
 1:	call alt_install
+	testl %eax, %eax
+	jnz 2f
+	movl $2, %eax
+	addq $40, %rsp
+	ret
 2:	xorl %eax, %eax
 	addq $40, %rsp
 	ret

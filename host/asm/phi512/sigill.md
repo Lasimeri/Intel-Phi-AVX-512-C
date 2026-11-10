@@ -50,9 +50,19 @@ the card's own compute per request 0.04 to 0.6 ms.
 The handler runs on the faulting thread's stack (no altstack yet), one
 call at a time, on an alternate signal stack (2026-10-14: `SA_ONSTACK`,
 `alt_install` for the main thread in the constructor and for any other
-thread at its first fault, which itself still runs on the program's
-stack; `alt_check` tells the region path, `on_alt`, so it may write
-back below the frame's rsp: [`region.md`](region.md)). `sigill_lock` (a test-and-test-and-set spin taken after
+thread at its first fault; `alt_check` tells the region path, `on_alt`,
+so it may write back below the frame's rsp: [`region.md`](region.md)).
+Since 2026-11-06 that first fault runs nothing: `alt_check` returns 2
+when it made the stack just now, and the handler goes straight to
+`.Lout`, so the instruction faults again and its region runs on the new
+stack with the 256 KiB floor. Before, the first region of a thread ran
+on the program's stack with the floor at rsp minus 128, and frames its
+in-card callees wrote below that were lost: llama-bench on Qwen3.8-2B
+Q8_0 (llama.cpp 4b77dee, `-mavx512f`) took a divide error at
+`ggml_compute_forward_mul_mat+0x356`, `idiv` by a stack slot that never
+came back, right after "a region left rsp below its stack floor"
+(kernel journal 2026-11-06 00:44:25). A SIGTRAP, or a thread whose
+stack could not be made, keeps the old behaviour. `sigill_lock` (a test-and-test-and-set spin taken after
 the prologue, released at `.Lout`, where every path ends) serializes the
 threads, since the translation, the region path ([`region.md`](region.md):
 the units, the refresh list, `region_file`), the register file in `.bss`

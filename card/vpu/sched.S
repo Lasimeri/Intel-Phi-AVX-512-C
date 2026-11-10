@@ -89,13 +89,13 @@ slots_start:
 	addq $OFF_SLOTSEQ, %rsi
 	movl $1, %edx
 	call phi_copy64
-	# the slots' cores: core 56 is the dispatcher's and stays out of them
+	# the slots' cores: the last core is the dispatcher's and stays out of them
 	movl nslots(%rip), %r12d
 	movl slot_cores(%rip), %eax
 	imull %r12d, %eax
-	cmpl $NCORES, %eax
+	cmpl ncores(%rip), %eax
 	jle 2f
-	movl $NCORES, %eax
+	movl ncores(%rip), %eax
 	xorl %edx, %edx
 	divl slot_cores(%rip)
 	movl %eax, %r12d
@@ -122,7 +122,10 @@ slots_start:
 	movl %eax, core_base(%rip)
 	movl slot_cores(%rip), %eax
 	movl %eax, core_count(%rip)
-	movl %r13d, %edi
+	cmpl $0, overlap(%rip)			# -O: this slot's threads on hardware
+	je 41f					# threads 1 and 2 of its cores
+	movl $2, mate_base(%rip)
+41:	movl %r13d, %edi
 	jmp sched_main
 4:	movq %r13, %rcx
 	imulq $SH_SLOT_BYTES, %rcx, %rcx
@@ -130,18 +133,27 @@ slots_start:
 	incl %r13d
 	jmp 3b
 5:	# this process's pool: the cores after the slots'; when the slots
-	# took every core (-S 1 -C 57: a single-threaded program's whole
-	# card) it keeps the last core beside them, where its threads sleep
-	# on a futex until a legacy job comes
+	# took every core (-S 1 -C 57 on a 3120A: a single-threaded program's
+	# whole card) it keeps the last core beside them, where its threads
+	# sleep on a futex until a legacy job comes
 	movl slot_cores(%rip), %eax
 	imull %r12d, %eax
-	cmpl $NCORES - 1, %eax
+	movl ncores(%rip), %ecx
+	decl %ecx
+	cmpl $0, overlap(%rip)			# -O: the pool keeps hardware threads 0
+	je 50f					# and 3 of every core but the last, beside
+	xorl %eax, %eax				# the slots' 1 and 2
+	jmp 51f
+50:	cmpl %ecx, %eax
 	jle 51f
-	movl $NCORES - 1, %eax
+	movl %ecx, %eax
 51:	movl %eax, core_base(%rip)
-	movl $NCORES, %ecx
+	movl ncores(%rip), %ecx
 	subl %eax, %ecx
-	movl %ecx, core_count(%rip)
+	cmpl $0, overlap(%rip)			# -O: cores 0 to ncores - 2, two threads
+	je 52f					# each; the last core is the control plane's
+	decl %ecx
+52:	movl %ecx, core_count(%rip)
 	call l_begin
 	leaq s_sl_up1(%rip), %rsi
 	call w_str
@@ -440,26 +452,39 @@ sched_main:
 	movq $3, TLS_MATE(%rdi)
 	# this thread's CPU: never one of its pool's (a spinning thread beside
 	# a spinning thread is time-sliced by the kernel, milliseconds a
-	# dispatch, measured 2026-10-13): core 56's hardware thread 1 (CPU 226)
-	# when the slots leave core 56 to the control plane and this is the
-	# only slot, else the first core's hardware thread 1 (the pool takes 0
-	# and 3; the block-device pollers live on core 55 only)
-	movl core_base(%rip), %edi
+	# dispatch, measured 2026-10-13): the last core's hardware thread 1
+	# (CPU 4 (ncores - 1) + 2: 226 on a 3120A) when the slots leave the last
+	# core to the control plane and this is the only slot, else the first
+	# core's hardware thread 1 (the pool takes 0 and 3; the block-device
+	# pollers live on the core before the last only); under -O every core
+	# but the last is taken by the pool and the slots, so the last core's
+	# hardware thread 1 (CPU 4 (ncores - 1) + 2: 242 on a 7120A)
+	cmpl $0, overlap(%rip)
+	je 3f
+	movl ncores(%rip), %edi
+	decl %edi
+	leal 2(,%rdi,4), %edi
+	jmp 2f
+3:	movl core_base(%rip), %edi
 	addl core_count(%rip), %edi		# the first core after the pool
-	cmpl $NCORES - 2, %edi
+	movl ncores(%rip), %eax
+	subl $2, %eax
+	cmpl %eax, %edi
 	ja 1f
 	cmpl $1, nslots(%rip)
 	jne 1f
 	shll $2, %edi				# its hardware thread 0: a core of its
-	addl $1, %edi				# own (core 56 is the dispatcher's, whose
-	jmp 2f					# PCIe polling slows a neighbour 5 to 12x)
+	addl $1, %edi				# own (the last core is the dispatcher's,
+	jmp 2f					# whose PCIe polling slows a neighbour 5 to 12x)
 1:	movl core_base(%rip), %edi
 	addl core_count(%rip), %edi
-	cmpl $NCORES - 1, %edi
+	movl ncores(%rip), %eax
+	decl %eax
+	cmpl %eax, %edi
 	ja 11f
 	cmpl $1, nslots(%rip)
 	jne 11f
-	movl $226, %edi
+	leal 2(,%rax,4), %edi
 	jmp 2f
 11:	movl core_base(%rip), %edi
 	shll $2, %edi

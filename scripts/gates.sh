@@ -65,9 +65,12 @@ case " $only " in *" op "*) ggml op-512 ggml-op-test.c "$b512" && ggml op-avx2 g
 
 prev_hp=$("$vpu" -c "$card" config 2>/dev/null | awk '/^hugepages/ {print $2}')
 prev_w=$("$vpu" -c "$card" config 2>/dev/null | awk '/^worker/ {$1 = ""; sub(/^ +-v */, ""); print}')
+# One slot with two threads on every core but the last two (-C 55 on a
+# 3120A, 59 on a 7120A), the wide pool and the dispatcher on those.
+cores=$("$vpu" -c "$card" cores)
 fresh() {
     "$vpu" -c "$card" stop > /dev/null 2>&1
-    PHI_VPU_ARGS="-S 1 -C 55 -T 2 -R 128 -s 1000" "$vpu" -c "$card" start 57 > "$logs/worker-$1.txt" 2>&1
+    PHI_VPU_ARGS="-S 1 -C $((cores - 2)) -T 2 -R 128 -s 1000" "$vpu" -c "$card" start "$cores" > "$logs/worker-$1.txt" 2>&1
 }
 # NAME EXPECTED_OK EXTRA_ENV BIN [ARGS]: a fresh worker, the program under
 # the preload, its ok lines counted and its verdict line read.

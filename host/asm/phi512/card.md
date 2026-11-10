@@ -32,7 +32,9 @@ table. 0.6 to 0.9 ms a chunk: the link's floor for 2 MiB.
 The register file into the slot's `SD_REGS_IN` with the stripe's counter
 and bound in the seed's registers; the request: `fn_id` = seed index +
 1, `entry` 0 (a hand-translated blob starts at the fault point),
-`threads` from `PHI512_THREADS` (114), the split (`ind_reg`,
+`threads` from `PHI512_THREADS` (256 by default since 2026-10-22, was 114:
+the card clamps it to its slot's pool plus one, 111 on a 3120A, 119 on a
+7120A), the split (`ind_reg`,
 `bound_reg`, `step` from the seed). The caller waits when every card's
 instance is posted.
 

@@ -34,6 +34,7 @@
 #define VPU_OFF_NONCE 128     /* a line the card alone writes: the nonce of its DMA channel's open (card/vpu/cdma.md); the host never touches it */
 #define VPU_OFF_REPLY 256     /* struct vpu_reply */
 #define VPU_OFF_STATS 320     /* struct vpu_stats: the worker's running counters, one line it rewrites after every reply (phitop reads it) */
+#define VPU_OFF_CDMA_STATS 192   /* the card DMA channel's traffic: u64 bytes into the card, bytes out, copies in, copies out; one line rewritten after every reply (phitop reads it) */
 #define VPU_OFF_DATA  (1u << 20)   /* bulk data starts here, page aligned */
 
 #define VPU_MAGIC 0x5650555F52454144ULL   /* "VPU_READ" */

@@ -58,6 +58,7 @@
 	.set CD_F_MOUT, 160
 	.set CD_F_N, 168
 	.set CD_WIN_LEN, 176
+	.set CD_STREAM_AT, 184		# PHI_GGML_STREAM: the next free byte of the window above WINDOW_LEN (0: none placed yet)
 	.set CD_BYTES, 256
 
 # A split (struct Split), an entry of the splits table keyed by the

@@ -9,10 +9,14 @@ pole after the whole-expert placement). No libc: system calls direct
 `build.sh` and audited for what the card does not run.
 
 ```
-phi-vpu-worker [-v] [-t N] [-s MS] [-i US] [-e N] [-m 0|1] [-d 0|1] [-S slots] [-C cores] [-T threads] [-R pages] [threads]
+phi-vpu-worker [-v] [-O] [-t N] [-s MS] [-i US] [-e N] [-m 0|1] [-d 0|1] [-S slots] [-C cores] [-T threads] [-R pages] [-N cores] [threads]
 ```
 
-`threads` 1 to 228 (57): the dispatcher plus the pool. `-v` logs each
+`threads` 1 to every hardware thread of the card (default and 0: one a
+core, 57 on a 3120A, 61 on a 7120A): the dispatcher plus the pool.
+`-N cores` sets the card's core count instead of counting its CPUs
+(`count_cores`: the CPUs this process may run on at start over four; a
+failed count leaves 57). `-v` logs each
 request (the matrix service's at `-v -v`, since a line costs its reply
 35 to 60 us on the host-backed disk); `-s MS` spins that long after a
 job before parking (200); `-i US` polls the doorbell every that many
@@ -32,9 +36,9 @@ dispatches or requests (below).
   failure tolerated: the block device then serves every transfer),
   opens `/dev/phiblk1` with `O_DIRECT` (the page cache would serve the
   host's stale bytes otherwise), sets its own per-thread block as `fs`
-  (`arch_prctl`), pins itself to CPU 0 (core 56's last hardware thread,
+  (`arch_prctl`), pins itself to CPU 0 (one of the last core's threads,
   so the pool's core-major fill never lands a worker on its core until
-  all 227 others are taken), calibrates its clock, opens the card's DMA
+  every other is taken), calibrates its clock, opens the card's DMA
   channel for the pull (`cdma_open`, `cdma.md`; one log line says
   whether it is up, with the DCR and tail it found, or why not; `-d 0`
   skips it), starts the pool, initialises the exec
@@ -43,10 +47,10 @@ dispatches or requests (below).
   be invisible for ever), the scratch displacement at `OFF_SCRATCH`
   (`SCRATCH_DISP`, the same in every thread's block), then `VPU_MAGIC`
   at `OFF_READY`.
-- **The pool.** Thread `t` lives on core `t mod 57`, its hardware
+- **The pool.** Thread `t` lives on core `core_base + t mod core_count`, its hardware
   thread from `pool_slot` (a core's first two threads on hardware
   threads 0 and 3, keeping 1 and 2, where the block devices' pollers
-  run, free; core 56 in order 0..3), pinned by `sched_setaffinity` from
+  run, free; the last core in order 0..3), pinned by `sched_setaffinity` from
   inside the thread, with a 64 KiB alternate signal stack for the exec
   engine's handlers and a 256 KiB stack. A thread is `clone` with
   `CLONE_THREAD_FLAGS | CLONE_SETTLS`: its block (`tls_blocks`, a page
@@ -171,3 +175,38 @@ asleep beside it. CPU numbering on the card: core c's hardware thread h is
 CPU 4c + h + 1 for c < 56; core 56's are CPUs 225, 226, 227 and 0. The
 worker reserves the program's address range first thing
 ([`resident.md`](resident.md)).
+
+## The same layout on a 7120A (2026-10-22)
+
+The worker counts the card's cores at start (`ncores`, 61 on a 7120A), so
+the layout above is `-S 1 -C 59 -T 2 -R 128 -s 1000` there (the scripts
+pass `-C` as the card's cores less two): 118 pool threads, two on each of
+cores 0 to 58 (hardware threads 0 and 3), the slot's control thread on
+core 59's thread 0 (CPU 237), the dispatcher on CPU 0 (core 60) with the
+wide pool asleep on cores 59 and 60. Measured on the 7120A, every task's
+`Cpus_allowed_list` against `/proc/cpuinfo`'s APIC IDs: exactly that, no
+thread unpinned; and `/proc/stat` before and after the region gate: both
+pool threads of each of the 59 cores on the CPU for the whole run (341 to
+343 ticks), hardware threads 1 and 2 idle. With `-N 57 -C 55` the worker
+pins every thread where the 57-core worker of 2026-10-14 did (the same
+CPU for each of its 120 threads), the check that a 3120A's layout is
+unchanged.
+
+## Slots beside the pool (`-O`, 2026-11-06)
+
+`-O` lets the slots share the wide pool's cores instead of taking cores
+of their own. Each core has four hardware threads; the pool keeps
+threads 0 and 3 (`pool_slot`, `slot_order` 0, 3, 1, 2) of cores 0 to
+`ncores - 2`, and a slot's threads take threads 1 and 2 of its cores
+(`mate_base` 2 added to `TLS_MATE` before `pool_slot`, set in the slot
+process). The slot's control thread goes to the last core's hardware
+thread 1 (CPU 4 (ncores - 1) + 2, 242 on a 7120A), the dispatcher stays
+on CPU 0. On a 7120A, `-O -S 1 -C 59 -T 2` with 121 threads gives the
+translated regions 118 threads on cores 0 to 58 beside the matrix
+service's 120 on cores 0 to 59; core 59's threads 1 and 2 stay with the
+block-device pollers. `-T` above 2 would wrap onto the pool's threads
+and is not meant with `-O`.
+
+After every reply the worker also stores `cdma_stats` at `OFF_CDMA_STATS`
+(192, `vpu_proto.h`): the DMA channel's bytes and copies each way, which
+phitop shows on its pcie line (2026-11-06).

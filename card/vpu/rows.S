@@ -14,10 +14,10 @@
 
 	.text
 
-# slice_rows: rows i0..i1 of m (rdx) for slice edi of esi: with 57 slices
-# every core has one; with 114 the slices s and s + 57 share a core and
-# take alternate rows of the same chunk (mate, nmates). Returns rax i0,
-# rdx i1, ecx mate, r8d nmates.
+# slice_rows: rows i0..i1 of m (rdx) for slice edi of esi: with ncores
+# slices (57 on a 3120A, 61 on a 7120A) every core has one; with 2 ncores
+# the slices s and s + ncores share a core and take alternate rows of the
+# same chunk (mate, nmates). Returns rax i0, rdx i1, ecx mate, r8d nmates.
 	.globl slice_rows
 slice_rows:
 	movq %rdx, %r11				# m
@@ -25,21 +25,21 @@ slice_rows:
 	movl %edi, %r10d			# core
 	xorl %ecx, %ecx				# mate
 	movl $1, %r8d				# nmates
-	cmpl $NCORES, %esi
+	cmpl ncores(%rip), %esi
 	jle 1f
 	movl %esi, %eax
 	xorl %edx, %edx
-	movl $NCORES, %esi
+	movl ncores(%rip), %esi
 	divl %esi
 	testl %edx, %edx
 	jnz 1f
-	movl $NCORES, %r9d
-	movl %eax, %r8d				# nslices / 57
+	movl ncores(%rip), %r9d
+	movl %eax, %r8d				# nslices / ncores
 	movl %edi, %eax
 	xorl %edx, %edx
 	divl %esi
-	movl %edx, %r10d			# slice % 57
-	movl %eax, %ecx				# slice / 57
+	movl %edx, %r10d			# slice % ncores
+	movl %eax, %ecx				# slice / ncores
 1:	movq %r11, %rax
 	movl %r10d, %esi
 	imulq %rsi, %rax
@@ -538,11 +538,11 @@ copy_share:
 	movl %esi, %r12d			# core
 	xorl %r13d, %r13d			# mate
 	movl $1, %r14d				# nmates
-	cmpl $NCORES, %edx
+	cmpl ncores(%rip), %edx
 	jle 1f
 	movl %edx, %eax
 	xorl %edx, %edx
-	movl $NCORES, %ecx
+	movl ncores(%rip), %ecx
 	divl %ecx
 	testl %edx, %edx
 	jnz 1f
@@ -614,18 +614,18 @@ copy_share:
 fused_setup:
 	movl $1, %r9d				# per_core
 	movl %r8d, %r10d			# most
-	cmpl $NCORES, %r8d
+	cmpl ncores(%rip), %r8d
 	jle 1f
 	pushq %rdx
 	movl %r8d, %eax
 	xorl %edx, %edx
-	movl $NCORES, %r11d
+	movl ncores(%rip), %r11d
 	divl %r11d
 	testl %edx, %edx
 	popq %rdx
 	jnz 1f
 	movl %eax, %r9d
-	movl $NCORES, %r10d
+	movl ncores(%rip), %r10d
 1:	movq %rcx, %rax
 	shrq $5, %rax				# n64 / PULL_LINES
 	testq %rax, %rax
@@ -1246,7 +1246,7 @@ rows_slice_q:
 	movl %r8d, %r11d			# nmates
 	movl %r12d, %eax
 	xorl %edx, %edx
-	movl $NCORES, %r9d
+	movl ncores(%rip), %r9d
 	divl %r9d
 	movl %edx, %r9d				# core
 	pushq %r11
@@ -1314,7 +1314,7 @@ rows_slice_multi:
 	jmp 1b
 3:	movl %r12d, %eax
 	xorl %edx, %edx
-	movl $NCORES, %r9d
+	movl ncores(%rip), %r9d
 	divl %r9d
 	movl %edx, %r9d				# core
 	pushq %r11

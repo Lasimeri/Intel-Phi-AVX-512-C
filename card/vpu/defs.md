@@ -13,11 +13,16 @@ number names its source here; the protocol with the host is `proto.inc`.
   (`vpu_worker.md`); `MAP_FIXED_NOREPLACE` is the probe at a program's own
   address; `CLONE_THREAD_FLAGS` is what a thread sharing everything with
   its own `fs` needs, the set glibc and musl use without the tid words.
-- **The card**: 57 cores of four hardware threads, CPU 0 being core 56
-  thread 3 and CPUs `1 + 4k` to `4 + 4k` core k (Intel Xeon Phi
-  Coprocessor System Software Developers Guide, the topology section, and
-  `/proc/cpuinfo` on the card); `MAX_POOL` is every hardware thread but
-  the dispatcher's; the pool's spin and delay constants are the C
+- **The card**: `ncores` cores of four hardware threads, counted by the
+  worker at start (`worker.S`, `count_cores`): 57 on a 3120A, 61 on a
+  7120A, at most `NCORES_MAX` (64). CPU 0 is one of the last core's
+  threads and CPUs `1 + 4k` to `4 + 4k` are core k (Intel Xeon Phi
+  Coprocessor System Software Developers Guide, the topology section;
+  `/proc/cpuinfo` on the card: on the 7120A CPU 0 is APIC 240, core 60,
+  and CPUs 241 to 243 are that core's other threads, measured
+  2026-10-22); `MAX_POOL` is every hardware thread of the largest card
+  but the dispatcher's; `SYS_sched_getaffinity` is 204 (the card kernel's
+  `arch/x86/entry/syscalls/syscall_64.tbl`); the pool's spin and delay constants are the C
   worker's (`vpu_worker.md`, "What a dispatch costs").
 - **The per-thread block**: the thread pointer convention wants the
   block's own address at `fs:0`; `SCRATCH_DISP` is what the worker

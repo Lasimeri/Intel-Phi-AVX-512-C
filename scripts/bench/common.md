@@ -15,5 +15,6 @@ there).
 - `bench_workers` stops when [`../card-users.sh`](../card-users.md) finds
   a process holding one of the cards (production's `llama-server`), unless
   `FORCE=1`; otherwise restarts each card's worker in slot mode:
-  `PHI_VPU_HUGEPAGES=$HP PHI_VPU_ARGS="-S 1 -C 55 -T 2 -R $R -e 0 -s 1000"
-  phi-vpu.sh -c N start 57`.
+  `PHI_VPU_HUGEPAGES=$HP PHI_VPU_ARGS="-S 1 -C $((n - 2)) -T 2 -R $R -e 0 -s 1000"
+  phi-vpu.sh -c N start $n` with `n` the card's cores (`phi-vpu.sh cores`: 57 on a
+  3120A, 61 on a 7120A).

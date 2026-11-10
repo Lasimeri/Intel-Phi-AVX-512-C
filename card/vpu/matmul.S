@@ -166,16 +166,21 @@ copy_pool:
 	movl %ecx, %edx
 	jmp vpu_pool_map
 
-# map_threads: edi clamped to 1..min(pool + 1, POOL_SLOTS), in eax.
+# map_threads: edi clamped to 1..min(pool + 1, two threads on each of the
+# card's cores: 114 on a 3120A, 122 on a 7120A), in eax.
 map_threads:
 	pushq %rdi
 	call vpu_pool_threads
 	popq %rdi
 	incl %eax
-	cmpl $POOL_SLOTS, %eax
+	pushq %rcx
+	movl ncores(%rip), %ecx
+	addl %ecx, %ecx
+	cmpl %ecx, %eax
 	jle 1f
-	movl $POOL_SLOTS, %eax
-1:	cmpl %eax, %edi
+	movl %ecx, %eax
+1:	popq %rcx
+	cmpl %eax, %edi
 	jg 2f
 	movl %edi, %eax
 2:	cmpl $1, %eax
@@ -258,7 +263,43 @@ push_data:
 	movq %rsi, %r12
 	movq %rdx, %r13
 	movl %ecx, %r14d
-	leaq 63(%r12), %r15
+	# the card's own DMA channel first, whatever the size (2026-11-06):
+	# each piece copied into the landing area in card memory, then one
+	# engine copy to the window (cdma_push), instead of the cores' 64-byte
+	# stores through the uncached mapping; a refusal or a timeout sends the
+	# rest the way it went before
+70:	cmpq $0, cdma_ready(%rip)
+	je 79f
+71:	testq %r12, %r12
+	jle 78f
+	movq %r12, %r15
+	cmpq $983040, %r15			# 15360 lines: under the length field and the landing area
+	jbe 72f
+	movq $983040, %r15
+72:	movq cdma_land(%rip), %rdi
+	movq %rbx, %rsi
+	leaq 63(%r15), %rdx
+	shrq $6, %rdx
+	call phi_copy64
+	xorl %edi, %edi
+	movq %r13, %rsi
+	leaq 63(%r15), %rdx
+	andq $-64, %rdx
+	call cdma_push
+	testq %rax, %rax
+	jz 79f
+	movq %rax, %rdi
+	call cdma_wait
+	testl %eax, %eax
+	jz 79f
+	addq %r15, %rbx
+	addq %r15, %r13
+	subq %r15, %r12
+	incq stat_dma_push(%rip)
+	jmp 71b
+78:	xorl %eax, %eax
+	jmp 9f
+79:	leaq 63(%r12), %r15
 	shrq $6, %r15
 	xorl %eax, %eax
 	cmpl $0, map_small(%rip)
@@ -3243,6 +3284,8 @@ bjob:	.skip 32
 r_big:	.skip 8
 r_rounds:	.skip 8
 r_i:	.skip 8
+	.globl stat_dma_push
+stat_dma_push:	.skip 8			# result pushes carried by the DMA channel (push_data)
 
 	.section .rodata
 s_upload:	.asciz "matmul: upload id "

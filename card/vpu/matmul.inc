@@ -108,7 +108,7 @@
 # The row loops' constants (vpu_matmul.md).
 	.set ROW_CHUNK, 32
 	.set ROW_CHUNK_MAX, 64
-	.set POOL_SLOTS, 114
+	# (the pool slots a matrix request may use: two threads a core, 2 ncores, map_threads in matmul.S)
 	.set OWN_GROUPS_MAX, 512
 	.set MAP_POOL_MAX, 2097152
 	.set PULL_ONE_MAX, 4096

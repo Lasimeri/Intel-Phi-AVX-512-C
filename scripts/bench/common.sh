@@ -31,6 +31,8 @@ bench_workers() {
     echo "== $(date '+%F %T') fresh workers on cards $cards ($HP huge pages, pool -R $R)"
     for c in ${cards//,/ }; do
         "$root/scripts/phi-vpu.sh" -c "$c" stop > /dev/null 2>&1
-        PHI_VPU_HUGEPAGES=$HP PHI_VPU_ARGS="-S 1 -C 55 -T 2 -R $R -e 0 -s 1000" "$root/scripts/phi-vpu.sh" -c "$c" start 57 2>&1 | grep -iv "^worker started" | head -2
+        # two threads on every core but the last two: -C 55 on a 3120A, 59 on a 7120A
+        n=$("$root/scripts/phi-vpu.sh" -c "$c" cores)
+        PHI_VPU_HUGEPAGES=$HP PHI_VPU_ARGS="-S 1 -C $((n - 2)) -T 2 -R $R -e 0 -s 1000" "$root/scripts/phi-vpu.sh" -c "$c" start "$n" 2>&1 | grep -iv "^worker started" | head -2
     done
 }

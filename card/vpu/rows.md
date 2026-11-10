@@ -10,8 +10,9 @@ multiply, and whose lines the pool reads", "Two threads per core");
 this document says what the assembly keeps and what it must reproduce
 exactly.
 
-- `slice_rows`: rows `i0..i1` of slice `s` of `n`: with 57 slices every
-  core has one; with 114 (two threads a core) the slices `s` and `s + 57`
+- `slice_rows`: rows `i0..i1` of slice `s` of `n`: with `ncores` slices
+  (the card's cores, `worker.S`: 57 on a 3120A, 61 on a 7120A) every
+  core has one; with twice that (two threads a core) the slices `s` and `s + ncores`
   share a core and take alternate rows of the same chunk, so the
   activation block they read is one and the same in their shared L1.
 - `groups_plain`, `groups_mixture`, `groups_own`: the column groups

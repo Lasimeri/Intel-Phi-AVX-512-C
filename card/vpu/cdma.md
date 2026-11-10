@@ -138,3 +138,21 @@ second the destination with the type (Linux `drivers/dma/mic_x100_dma.c`,
 `mic_dma_memcpy_desc`; the engine moves either direction on physical
 addresses, System Software Developer's Guide 2.1.8.2.1). Used by
 `res_push` for `K_PUSH`.
+
+## The other direction: `cdma_push` (2026-11-06)
+
+`cdma_push(landing offset, window offset, bytes)` copies card memory to
+the host window with the same engine: the checks of `cdma_submit` with
+the roles swapped (the source inside the landing area, the destination
+inside the window), then the shared `cdma_post` (the ring's room, one
+line of copy, status and two NOPs, the doorbell), completed by
+`cdma_wait` like a pull. `cdma_submit` now resolves its two offsets to
+card physical addresses and falls into `cdma_post` too; the descriptor it
+writes is unchanged. The engine takes either direction: the memcpy
+descriptor is a 40-bit source and a 40-bit destination (`dma.md`).
+
+`cdma_stats` (64 bytes, first in the section): bytes into the card,
+bytes out, copies in, copies out, added by `cdma_post` once a copy is
+posted (direction from `cdma_dir`, set by `cdma_submit` 0 and `cdma_push`
+1). The worker stores the line at `OFF_CDMA_STATS` (192) after every
+reply, beside `OFF_STATS`; phitop shows it as `card dma in, out`.

@@ -190,8 +190,9 @@ baseline then would lose the lines. Measured on card 0: the narrow suite
 back (306); every region of the three gates took the card's list, none
 overflowed.
 
-The diff runs over up to 110 slices (`WD_SLICES_MAX`: the slot's whole
-pool, two threads on each of 55 cores): the compare is memory-bound (with
+The diff runs over up to 2 (ncores - 2) slices (110 on a 3120A, 118 on a
+7120A: the slot's whole
+pool, two threads on each core but the last two): the compare is memory-bound (with
 32, card 0 was 72.7% busy at 1.87 ms a request in llama-server's first
 decode; graph reservation 74.7 s with 32, 58.6 s with 110 and callee
 translation).

@@ -23,8 +23,9 @@ open and before its own pool exists (a fork copies no threads),
    256 bytes per slot with the job line the dispatcher writes, the done
    line the slot writes and the slot's counters on a third line, so no
    line has two writers;
-2. clamps the slots so their cores stay below core 56, which is the
-   dispatcher's (CPU 0 is core 56's last hardware thread,
+2. clamps the slots so their cores stay below the last core (`ncores - 1`:
+   core 56 on a 3120A, 60 on a 7120A), which is the
+   dispatcher's (CPU 0 is one of the last core's hardware threads,
    [`vpu_worker.md`](vpu_worker.md));
 3. forks once per slot; the child sets `slot_index`, `core_base =
    slot x cores` and `core_count = cores`, and goes to `sched_main`;
@@ -107,9 +108,11 @@ median at most 8 us, p99 at most 20 us. The numbers measured are in
 
 A slot's main thread never shares a CPU with a spinning thread: with one
 slot leaving cores free it takes the first free core's hardware thread 0
-(`-S 1 -C 55`: CPU 221; the pollers of the block devices live on core
-55's threads 1 and 2 only), else core 56's thread 1 when the slot leaves
-only core 56, else its first core's thread 1. Two spinners on one CPU are
+(`-S 1 -C 55` on a 3120A: CPU 221, `-C 59` on a 7120A: CPU 237; the
+pollers of the block devices live on the core before the last, core
+55 or 59, threads 1 and 2 only), else the last core's thread 1 (CPU
+4 (ncores - 1) + 2) when the slot leaves
+only the last core, else its first core's thread 1. Two spinners on one CPU are
 time-sliced by the card's kernel at milliseconds: a 114-slice dispatch
 cost 3.5 ms flat before (the main thread sat on pool thread 57's CPU);
 and a control thread beside the dispatcher's PCIe polling (core 56) ran
@@ -120,3 +123,8 @@ fill fields sit in its fifth and sixth lines; the SLOTSEQ word is
 dispatcher's engine (`res_push`) with the slot waiting for the copy
 (`land_wait`); the slot's reply carries the copy's number in `exit_aux`
 and the wait's result in `exit_rip` when it refuses.
+
+Under `-O` (`worker.md`, slots beside the pool) the wide pool's
+`core_base` is 0 and its `core_count` `ncores - 1`, the slot sets
+`mate_base` 2 so its threads pin to hardware threads 1 and 2, and the
+slot's control thread pins to CPU 4 (ncores - 1) + 2.

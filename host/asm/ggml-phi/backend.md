@@ -155,3 +155,25 @@ backend. The backend loaded with no tensor allowed on a card
 (`PHI_GGML_MIN_BYTES` huge) ran 6.48 and 6.16 tokens a second against
 the CPU alone's 7.76 and 7.92, interleaved: the hand-offs, not the
 cards, cost about 30 ms a token (`docs/results/2026-10-07-rack-generation.md`).
+
+## Streamed weights (`PHI_GGML_STREAM`, 2026-11-06)
+
+`PHI_GGML_STREAM=1` keeps every weight in host RAM: `upload_area` copies
+the slice it was handed (staged at `OFF_A`, the layout an upload would
+send) to this card's next place in the window above the transfer areas
+(`WINDOW_LEN`, 768 MiB, up to the mapped file's length `CD_WIN_LEN`; the
+place advances in `CD_STREAM_AT`) and sends no `K_UPLOAD`. The id it
+returns is that window offset with bit 63 set; the callers keep it in
+`SP_ID` as before. `issue` turns such an id into `a_id` 0 and `a_off`,
+the card's own path for a matrix in the window
+(`card/vpu/vpu_matmul.h`: "with a cached (a_id) or in the window
+(a_off)"; `matmul.S` grows `g_a` and pulls `m * nb_a` bytes through
+`vpu_pull`, the block device whose DMA is the stack's host channels,
+3.58 GB/s measured on the desktop link, then computes). A slice that
+does not fit what is left of the window stays with the host
+(`stream: the window is full; ...`). Pairs (`phi_ggml_begin_id_pair`
+answers -2) and the fused feed-forward (`ffn_enabled` in `glue.S`) are
+off while streaming, because `K_MATMUL_MORE` and `K_FFN` name resident
+slices. `phi_ggml_free_all` rewinds `CD_STREAM_AT` with the splits. A
+`K_FREE` of a streamed id finds nothing on the card and is answered OK.
+The card pulls a whole matrix and then computes (no overlap yet).

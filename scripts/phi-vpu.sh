@@ -2,7 +2,8 @@
 # phi-vpu.sh: put the AVX-512 co-processor worker on a card and drive it.
 #
 #   scripts/phi-vpu.sh [-c N] deploy        build the worker on the host (GNU as and ld, audited) and put it on the card
-#   scripts/phi-vpu.sh [-c N] start [T]     start the worker with T threads (default 114, two per core);
+#   scripts/phi-vpu.sh [-c N] cores         the card's cores (its CPUs over four: 57 on a 3120A, 61 on a 7120A)
+#   scripts/phi-vpu.sh [-c N] start [T]     start the worker with T threads (default two per core: 114, 122);
 #                                           PHI_VPU_ARGS="-s MS -i US" passes worker options
 #                                           PHI_VPU_HUGEPAGES=N huge pages reserved on the card at start (768)
 #   scripts/phi-vpu.sh [-c N] stop
@@ -26,7 +27,9 @@ root=$(cd "$here/.." && pwd)
 phi_env "$@"
 set -- "${PHI_ARGS[@]}"
 dir=${PHI_VPU_DIR:-/opt/phi/vpu}
-threads_default=114   # two threads on each of the 57 cores (card/vpu/vpu_worker.md, "Two threads per core")
+# The default thread count: two threads on each of the card's cores
+# (card/vpu/vpu_worker.md, "Two threads per core"), asked of the card when
+# a start needs it.
 
 # The card over the stack's control socket (`phi run`, `phi put`, `phi get`:
 # the daemon's rpc ring across PCIe, no network, no SSH). `ssh_` runs one
@@ -53,6 +56,9 @@ get_() {
 pat='phi-vpu-worke[r]'
 
 running() { ssh_ "pgrep -f '$pat' >/dev/null"; }
+# The card's cores: four hardware threads each (the worker counts them the
+# same way, card/vpu/worker.S count_cores).
+card_cores() { echo $(( $(ssh_ nproc) / 4 )); }
 
 driver() {
     for cand in "$root/host/target/release/phi-vpu" "$root/host/target/debug/phi-vpu"; do
@@ -93,7 +99,7 @@ case "$cmd" in
         ;;
     start)
         refuse_if_swapping
-        n=${1:-$threads_default}
+        n=${1:-$(( 2 * $(card_cores) ))}
         # The worker takes its buffers from 2 MiB huge pages when the card has
         # them (one block record per 512 KiB instead of one per scattered
         # 4 KiB page; vpu_worker.md). PHI_VPU_HUGEPAGES is the reservation,
@@ -124,6 +130,9 @@ case "$cmd" in
     stop)
         if running; then ssh_ "pkill -f '$pat'"; echo "worker stopped on card $PHI_CARD"; else echo "no worker running on card $PHI_CARD"; fi
         ssh_ "echo 0 > /proc/sys/vm/nr_hugepages"
+        ;;
+    cores)
+        card_cores
         ;;
     status)
         if running; then echo "card $PHI_CARD: worker running"; else echo "card $PHI_CARD: no worker"; fi

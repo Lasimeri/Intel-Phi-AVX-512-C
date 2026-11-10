@@ -102,12 +102,15 @@ else
             exit 1
         }
         # Stdin is the program's: the start's ssh would read it. One thread per
-        # core: the seamless path splits a loop over 57 (offload.rs,
-        # SPLIT_THREADS) and copies through the window one core at a time,
-        # so a second thread per core only polls beside them (the default,
-        # 114, is the matrix multiplies'; card/vpu/vpu_worker.md).
+        # core: the seamless path splits a loop over the card's cores
+        # (offload.rs, SPLIT_THREADS) and copies through the window one core
+        # at a time, so a second thread per core only polls beside them (the
+        # default, two a core, is the matrix multiplies'; card/vpu/vpu_worker.md).
+        # Under PHI512_V3 one slot takes two threads on every core but the
+        # last two (the control plane): -C 55 on a 3120A, 59 on a 7120A.
         # (the restart's preload needs slots and a pool: -S 12 -C 4 -R 64.)
-        PHI_VPU_ARGS="${PHI_VPU_ARGS:-${PHI512_V3:+-S 1 -C 55 -T 2 -R 128 -s 1000}}" "$root/scripts/phi-vpu.sh" -c "$card" start 57 >&2 </dev/null || {
+        cores=$("$root/scripts/phi-vpu.sh" -c "$card" cores </dev/null)
+        PHI_VPU_ARGS="${PHI_VPU_ARGS:-${PHI512_V3:+-S 1 -C $((cores - 2)) -T 2 -R 128 -s 1000}}" "$root/scripts/phi-vpu.sh" -c "$card" start "$cores" >&2 </dev/null || {
             echo "phi512: could not start the worker on card $card (is the card up? phi -c $card status)" >&2
             exit 1
         }

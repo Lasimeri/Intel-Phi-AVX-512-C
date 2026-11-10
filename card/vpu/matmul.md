@@ -99,3 +99,17 @@ the same `phi-vpu matmul-check` driver): every format's section passes
 the C worker's after the timing fields are stripped. Defects met on the
 way are in `rows.md`; the fused feed-forward's down projection is the one
 that was here (a matrix pointer read through a clobbered register).
+
+## Results by the engine (2026-11-06)
+
+`push_data` sends every result through the card's DMA channel first,
+whatever its size: pieces of at most 983,040 bytes (15,360 lines, under
+the descriptor's length field and the landing area) are copied into the
+landing area in card memory (`phi_copy64`), then one `cdma_push` to the
+window and `cdma_wait`; `stat_dma_push` counts them. A refusal or a
+timeout sends the rest the way it went before (the mapping or the block
+device), and a failed copy closes the channel, said once in the log.
+Lengths round up to whole lines: the window's result area is whole 4 KiB
+blocks and the card's buffers keep `SLACK` past their data. Gated by
+`phi-vpu matmul-check` on the 7120A (every format ok, mixtures, up to
+four matrices, the fused feed-forward) with channel 7 up throughout.

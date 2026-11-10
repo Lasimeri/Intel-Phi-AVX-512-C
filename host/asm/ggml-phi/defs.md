@@ -43,7 +43,9 @@ state) so the payload offsets begin at 16.
   `CD_P_COLS`, `CD_P_NUSED`, the pair's second `CD_P_MORE`,
   `CD_P_LO2`, `CD_P_ROWS2`, `CD_P_OFF2`, and `CD_P_NIDS` the ids sent
   with whole experts), the fused request in flight (`CD_F_HAS`,
-  `CD_F_SEQ`, `CD_F_MOUT`, `CD_F_N`). Rust's `Card::ids` (the tensor's
+  `CD_F_SEQ`, `CD_F_MOUT`, `CD_F_N`), and `CD_STREAM_AT` (184), the
+  next free byte of the window above `WINDOW_LEN` for streamed weights
+  (`PHI_GGML_STREAM`, 0 until the first is placed; `backend.md`). Rust's `Card::ids` (the tensor's
   id on the card) lives in the split instead, `SP_ID[ci]`, which is the
   same map keyed the same way.
 - **Split** (`SP_*`, `SPLITS_CAP` 8192 entries): `SP_R0` (the host's

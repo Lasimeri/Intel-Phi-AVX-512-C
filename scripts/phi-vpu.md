@@ -2,7 +2,8 @@
 
 ```
 scripts/phi-vpu.sh [-c N] deploy        build the worker on the host (GNU as and ld, audited) and put it on the card
-scripts/phi-vpu.sh [-c N] start [T]     start the worker with T threads (default 114, two per core)
+scripts/phi-vpu.sh [-c N] cores         the card's cores: its CPUs over four (57 on a 3120A, 61 on a 7120A)
+scripts/phi-vpu.sh [-c N] start [T]     start the worker with T threads (default two per core: 114 on a 3120A, 122 on a 7120A)
 scripts/phi-vpu.sh [-c N] stop          stop the worker and release the huge pages
 scripts/phi-vpu.sh [-c N] status        worker process on the card, control words on the host
 scripts/phi-vpu.sh [-c N] log           the worker's output

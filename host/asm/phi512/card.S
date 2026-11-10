@@ -28,7 +28,7 @@ stat_resident_ns:	.skip 8
 stat_resident_bytes:	.skip 8
 stat_push_ns:	.skip 8
 	.globl fexec_threads
-fexec_threads:	.skip 8			# PHI512_THREADS: card threads an instance may split over (114)
+fexec_threads:	.skip 8			# PHI512_THREADS: card threads an instance may split over (256: the card clamps it to its slot's pool plus one, fexec.S)
 
 	.section .rodata
 s_env_cards:	.asciz "PHI512_CARDS"
@@ -75,7 +75,7 @@ cards_init:
 	pushq %r12
 	movq $0, ncards(%rip)
 	leaq s_env_threads(%rip), %rdi
-	movl $114, %esi
+	movl $256, %esi			# every thread the slot has (two a core: 111 on a 3120A, 119 on a 7120A)
 	call env_u64
 	movq %rax, fexec_threads(%rip)
 	leaq s_env_cards(%rip), %rdi

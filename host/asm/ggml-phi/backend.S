@@ -64,6 +64,8 @@ tg_only:	.skip 8			# PHI_GGML_TG_ONLY=K: a multiply of more than K tokens stays 
 	.p2align 3
 pp_only:	.skip 8			# PHI_GGML_PP_ONLY: tokens a multiply must exceed to reach a card (0: off)
 all_rows:	.skip 4
+	.globl stream_on
+stream_on:	.skip 4			# PHI_GGML_STREAM: the weights stay in the window (host RAM), the card pulls them per multiply
 unmapped_said:	.skip 4
 ids_env:	.skip 4			# PHI_GGML_IDS set
 place_any:	.skip 4			# a placement loaded
@@ -238,6 +240,7 @@ e_pp_only:	.asciz "PHI_GGML_PP_ONLY"
 e_tg_only:	.asciz "PHI_GGML_TG_ONLY"
 e_min_bytes:	.asciz "PHI_GGML_MIN_BYTES"
 e_pp_adapt:	.asciz "PHI_GGML_PP_ADAPT"
+e_stream:	.asciz "PHI_GGML_STREAM"
 e_act:	.asciz "PHI_GGML_ACT"
 e_ffn_h16:	.asciz "PHI_GGML_FFN_H16"
 e_ids:	.asciz "PHI_GGML_IDS"
@@ -285,6 +288,8 @@ s_start2:	.asciz " start)"
 s_nocards:	.asciz "no card is up with a worker polling; nothing to share the work with"
 s_clear:	.asciz "could not clear card "
 s_allrows_needs:	.asciz "PHI_GGML_ALL_ROWS needs PHI_GGML_OFFLOAD=1 (the judgement needs host rows): ignored"
+s_stream_on:	.asciz "stream: every weight stays in host RAM, in the window above the transfer areas; each multiply has the card pull its rows (no upload into the card's memory, no fused feed-forward, no pairs)"
+s_stream_full:	.asciz "stream: the window is full; this tensor stays with the host"
 s_experts_host:	.asciz "whole experts without the offload: the host keeps its copy of every expert (a batch handed to a GPU reads it) and skips the cards' at a generation step; the judge is off"
 s_experts_err1:	.asciz "PHI_GGML_EXPERTS: "
 s_experts_err2:	.asciz "; the experts are shared by rows"
@@ -1200,7 +1205,19 @@ phi_ggml_open:
 	leaq s_allrows_needs(%rip), %rsi
 	call say
 	movl $0, all_rows(%rip)
-81:	# whole experts
+81:	# the weights streamed from host RAM (PHI_GGML_STREAM)
+	leaq e_stream(%rip), %rdi
+	xorl %esi, %esi
+	call env_u64
+	testq %rax, %rax
+	setnz %al
+	movzbl %al, %eax
+	movl %eax, stream_on(%rip)
+	testl %eax, %eax
+	jz 85f
+	leaq s_stream_on(%rip), %rsi
+	call say
+85:	# whole experts
 	movl $0, place_any(%rip)
 	leaq e_experts(%rip), %rdi
 	call env_get
@@ -3124,7 +3141,44 @@ upload_area:
 	pushq %r13
 	movq %rdi, %rbx
 	movq %rsi, %r12
-	call mm_clear
+	cmpl $0, stream_on(%rip)
+	je 5f
+	# streamed: the staged area goes to this card's next place in the
+	# window above the transfer areas (host RAM) and stays there; no
+	# upload. The id is that window offset with bit 63 set, which issue
+	# turns into a_id 0 and a_off (the card's own path for a in the window).
+	movq %r12, %rdi
+	call round_up
+	movq %rax, %r13				# whole blocks
+	movq CD_STREAM_AT(%rbx), %rax
+	testq %rax, %rax
+	jnz 2f
+	movq $WINDOW_LEN, %rax			# the first place: above OFF_D + D_MAX
+2:	leaq (%rax,%r13), %rcx
+	cmpq CD_WIN_LEN(%rbx), %rcx
+	ja 3f
+	movq %rcx, CD_STREAM_AT(%rbx)
+	movq CD_BASE(%rbx), %rdi
+	addq %rax, %rdi
+	movq CD_BASE(%rbx), %rsi
+	addq $OFF_A, %rsi
+	movq %r12, %rdx
+	call mem_copy
+	movq CD_STREAM_AT(%rbx), %rax
+	subq %r13, %rax
+	btsq $63, %rax
+	popq %r13
+	popq %r12
+	popq %rbx
+	ret
+3:	leaq s_stream_full(%rip), %rsi
+	call say
+	xorl %eax, %eax
+	popq %r13
+	popq %r12
+	popq %rbx
+	ret
+5:	call mm_clear
 	movq CD_NEXT_ID(%rbx), %r13
 	leaq mm_buf(%rip), %rax
 	movq %r13, MM_A_ID(%rax)
@@ -4631,7 +4685,11 @@ issue:
 	movq -64(%rbp), %rax
 	movq RDW_CI(%r15), %rcx
 	movq SP_ID(%rax,%rcx,8), %rax
-	movq %rax, MM_A_ID(%rdi)
+	btrq $63, %rax				# a streamed slice: its window offset (upload_area)
+	jnc 1f
+	movq %rax, MM_A_OFF(%rdi)
+	xorl %eax, %eax				# a_id 0: the card pulls a from the window
+1:	movq %rax, MM_A_ID(%rdi)
 	movl RD_A_TYPE(%rbx), %eax
 	movl %eax, MM_A_TYPE(%rdi)
 	movl -48(%rbp), %eax
@@ -4900,7 +4958,11 @@ work_max:
 # count, -2 when the pair cannot go as one, -1 when not open.
 	.globl phi_ggml_begin_id_pair
 phi_ggml_begin_id_pair:
-	pushq %rbp
+	cmpl $0, stream_on(%rip)		# streamed weights: no pairs (K_MATMUL_MORE names
+	je 1f					# resident slices), the two go one by one
+	movq $-2, %rax
+	ret
+1:	pushq %rbp
 	movq %rsp, %rbp
 	pushq %rbx
 	pushq %r12
@@ -5656,6 +5718,7 @@ phi_ggml_free_all:
 	call wait_card
 	movq $0, CD_UPLOADED(%rbx)
 	movl $0, CD_FULL(%rbx)
+	movq $0, CD_STREAM_AT(%rbx)		# the streamed weights' places, forgotten with the splits
 	incl %r12d
 	jmp 1b
 2:	leaq splits_tab(%rip), %rdi

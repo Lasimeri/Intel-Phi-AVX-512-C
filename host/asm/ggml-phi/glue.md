@@ -45,7 +45,8 @@ hands out a backend from a pool of eight (`BE_SLOT`, `BE_USED`).
   not at a graph it reuses.
 - `GLU` (SwiGLU, split) when `PHI_GGML_FFN` is on and the node is part
   of a fusable block (`ffn_enabled`; off under `PHI_GGML_OFFLOAD` with
-  the message the C gave).
+  the message the C gave; off while `PHI_GGML_STREAM` is on, since
+  `K_FFN` names resident slices).
 - views, reshapes, permutes and transposes are ggml's own and pass.
 
 The scheduler asks about every node of a graph before it computes any,

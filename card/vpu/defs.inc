@@ -28,6 +28,7 @@
 	.set SYS_gettid, 186
 	.set SYS_futex, 202
 	.set SYS_sched_setaffinity, 203
+	.set SYS_sched_getaffinity, 204
 	.set SYS_clock_gettime, 228
 	.set SYS_exit_group, 231
 
@@ -90,11 +91,12 @@
 	.set EINTR, 4
 	.set EAGAIN, 11
 
-# The card: 57 cores of four hardware threads; CPU 0 is core 56 thread 3,
-# CPUs 1 + 4k .. 4 + 4k are core k (vpu_worker.md). The dispatcher lives on
-# CPU 0; the pool takes the other 227 hardware threads at most.
-	.set NCORES, 57
-	.set MAX_POOL, 227
+# The card: ncores cores of four hardware threads (worker.S counts them at
+# start: 57 on a 3120A, 61 on a 7120A), at most NCORES_MAX; CPU 0 is the
+# last core's, CPUs 1 + 4k .. 4 + 4k are core k (vpu_worker.md). The
+# dispatcher lives on CPU 0; the pool takes the other hardware threads.
+	.set NCORES_MAX, 64
+	.set MAX_POOL, 4 * NCORES_MAX - 1
 	.set SPIN_ROUNDS, 2000
 	.set WAIT_DELAY, 64
 	.set DONE_GROUPS, 8

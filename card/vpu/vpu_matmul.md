@@ -383,7 +383,9 @@ two requests and as one: on card 0, 0.57 ms median round trip against
 The section above, "Two threads per core, measured again", found the
 second thread no help on a prompt-sized batch (q6_K at n 64, 188 against
 209 GFLOP/s), and the service stayed capped at 58 slices (`POOL_SLOTS`,
-`map_threads`). It is built for 114 now (`POOL_SLOTS`), because a
+`map_threads`). It is built for 114 now (`POOL_SLOTS`; since 2026-10-22 two
+threads on each of the card's cores, 2 ncores: 114 on a 3120A, 122 on a
+7120A), because a
 second thread has issue to spare and a one-token request is issue and
 latency bound, and what stood in its way was fixed cost that grew with
 the thread count:

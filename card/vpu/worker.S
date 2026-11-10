@@ -61,6 +61,12 @@ map_small:	.skip 4
 use_dma:	.skip 4			# -d: the card's own DMA channel for the pull (cdma.S)
 nthreads:	.skip 4			# pool threads; the dispatcher is one more
 busy_cores:	.skip 4
+# The card's cores: its CPUs (this process may run on all of them at start)
+# over four, or -N; 57 on a 3120A, 61 on a 7120A. The last is the
+# dispatcher's (CPU 0 is one of its hardware threads).
+	.globl ncores
+ncores:	.skip 4
+ncores_arg:	.skip 4		# -N: the count, 0 to count the CPUs
 # Protocol v3 (sched.S): -S slot processes of -C cores each, -T threads a
 # core; the pool of this process is laid over cores core_base ..
 # core_base + core_count - 1 (every core when there are no slots).
@@ -71,6 +77,9 @@ slot_tpc:	.skip 4
 core_base:	.skip 4
 core_count:	.skip 4
 slot_index:	.skip 4			# -1 in the dispatcher, the slot's index in a slot process
+	.globl overlap, mate_base
+overlap:	.skip 4			# -O: the slots share the wide pool's cores, on hardware threads 1 and 2 (sched.md)
+mate_base:	.skip 4			# added to a pool thread's place on its core before pool_slot: 2 in a slot under -O
 shared:	.skip 8			# the page every process shares (SH_*, proto.inc)
 	.balign 64
 slotseq_seen:	.skip 64		# the SLOTSEQ line as last acted on (a line: phi_copy64 wants it aligned)
@@ -93,8 +102,8 @@ pool_done:	.skip DONE_GROUPS * 64
 	.balign 64
 pool_parked:	.skip 4			# pool threads asleep in the kernel
 	.balign 64
-cores:	.skip NCORES * 64		# each core's count of threads finished, on a line of its own
-core_threads:	.skip NCORES * 4
+cores:	.skip NCORES_MAX * 64		# each core's count of threads finished, on a line of its own
+core_threads:	.skip NCORES_MAX * 4
 	.balign 64
 jobs:	.skip (MAX_POOL + 1) * JOB_BYTES
 	.balign 4096
@@ -145,8 +154,7 @@ _start:
 	movl $4, slot_cores(%rip)
 	movl $1, slot_tpc(%rip)
 	movl $-1, slot_index(%rip)
-	movl $NCORES, core_count(%rip)
-	movl $57, %r13d			# max_threads (the dispatcher included)
+	xorl %r13d, %r13d		# max_threads (the dispatcher included): 0 = the card's cores, set after the arguments
 	# argv: (rsp) argc, 8(rsp) argv[0], ...
 	movq (%rsp), %r12
 	leaq 16(%rsp), %rbx		# argv[1]
@@ -157,8 +165,15 @@ _start:
 	leaq s_v(%rip), %rdi
 	call str_eq
 	testl %eax, %eax
-	jz 2f
+	jz 20f
 	incl vpu_verbose(%rip)
+	jmp 8f
+20:	movq (%rbx), %rsi
+	leaq s_O(%rip), %rdi
+	call str_eq
+	testl %eax, %eax
+	jz 2f
+	movl $1, overlap(%rip)
 	jmp 8f
 2:	movq (%rbx), %rsi
 	leaq s_t(%rip), %rdi
@@ -257,6 +272,14 @@ _start:
 	movl %eax, res_want(%rip)
 	jmp 8f
 74:	movq (%rbx), %rsi
+	leaq s_N(%rip), %rdi
+	call str_eq
+	testl %eax, %eax
+	jz 76f
+	call opt_value
+	movl %eax, ncores_arg(%rip)
+	jmp 8f
+76:	movq (%rbx), %rsi
 	call parse_u64
 	testq %rdx, %rdx
 	jnz 8f
@@ -264,12 +287,19 @@ _start:
 8:	addq $8, %rbx
 	decq %r12
 	jmp 1b
-9:	cmpl $1, %r13d
+9:	call count_cores
+	movl ncores(%rip), %eax
+	movl %eax, core_count(%rip)
+	testl %r13d, %r13d
+	jnz 91f
+	movl %eax, %r13d
+91:	cmpl $1, %r13d
 	jge 10f
 	movl $1, %r13d
-10:	cmpl $MAX_POOL + 1, %r13d
+10:	shll $2, %eax			# every hardware thread of the card at most
+	cmpl %eax, %r13d
 	jle 11f
-	movl $MAX_POOL + 1, %r13d
+	movl %eax, %r13d
 11:
 	# /dev/phihost: the control area (16 KiB) and the whole window.
 	leaq s_phihost(%rip), %rdi
@@ -317,11 +347,13 @@ _start:
 	movl %eax, blk_fd(%rip)
 
 	# The dispatcher: its block as fs (slot MAX_POOL), pinned to CPU 0,
-	# which is core 56's last hardware thread.
+	# one of the last core's hardware threads.
 	leaq tls_blocks + MAX_POOL * TLS_BYTES(%rip), %rdi
 	movq %rdi, TLS_SELF(%rdi)
 	movq $-1, TLS_INDEX(%rdi)
-	movq $56, TLS_CORE(%rdi)
+	movl ncores(%rip), %eax
+	decl %eax
+	movq %rax, TLS_CORE(%rdi)
 	movq $3, TLS_MATE(%rdi)
 	movq %rdi, %rsi
 	movl $ARCH_SET_FS, %edi
@@ -736,6 +768,10 @@ main_loop:
 	movq %rcx, %rsi
 	movl $1, %edx
 	call phi_copy64
+	leaq OFF_CDMA_STATS(%rbx), %rdi		# the DMA channel's traffic beside it
+	leaq cdma_stats(%rip), %rsi
+	movl $1, %edx
+	call phi_copy64
 	cmpl $0, trace(%rip)
 	je 6f
 	cmpl $K_EXEC, rq+RQ_KERNEL(%rip)
@@ -801,7 +837,8 @@ main_loop:
 # ---- the pool ----
 
 # pool_start: edi pool threads. Counts each core's threads, then creates
-# them core-major (thread t on core t mod 57, its slot from pool_slot).
+# them core-major (thread t on core core_base + t mod core_count, its slot
+# from pool_slot).
 pool_start:
 	pushq %rbx
 	pushq %r12
@@ -822,7 +859,7 @@ pool_start:
 2:	xorl %ebx, %ebx
 	xorl %ecx, %ecx
 	leaq core_threads(%rip), %rax
-3:	cmpl $NCORES, %ebx
+3:	cmpl ncores(%rip), %ebx
 	jge 4f
 	cmpl $0, (%rax,%rbx,4)
 	je 31f
@@ -902,16 +939,62 @@ create_thread:
 
 # pool_slot: the hardware thread of slot esi on core edi: a core's first two
 # threads go to hardware threads 0 and 3, keeping 1 and 2 (where the
-# card's block-device pollers run) free; core 56's thread 3 is the
-# dispatcher's, so there the order is 0, 1, 2, 3. Returns eax.
+# card's block-device pollers run) free; the last core's thread 3 is the
+# dispatcher's (CPU 0), so there the order is 0, 1, 2, 3. Returns eax.
 pool_slot:
 	andl $3, %esi
-	cmpl $56, %edi
+	movl ncores(%rip), %eax
+	decl %eax
+	cmpl %eax, %edi
 	je 1f
 	leaq slot_order(%rip), %rax
 	movzbl (%rax,%rsi), %eax
 	ret
 1:	movl %esi, %eax
+	ret
+
+# count_cores: ncores = -N when given, else the CPUs this process may run
+# on (every online CPU at start) over four, at most NCORES_MAX; a failed
+# query or a count that is not a whole number of cores leaves 57, the
+# 3120A's. Uses the affinity buffer, which pin_cpu fills again later.
+count_cores:
+	pushq %rbx
+	movl ncores_arg(%rip), %eax
+	testl %eax, %eax
+	jnz 5f
+	xorl %edi, %edi
+	movl $128, %esi
+	leaq affinity(%rip), %rdx
+	SYS SYS_sched_getaffinity
+	testq %rax, %rax
+	jle 7f
+	movl %eax, %ecx			# bytes the kernel wrote
+	leaq affinity(%rip), %rsi
+	xorl %ebx, %ebx			# CPUs
+1:	movzbl (%rsi), %eax
+2:	testl %eax, %eax
+	jz 3f
+	movl %eax, %edx
+	andl $1, %edx
+	addl %edx, %ebx
+	shrl $1, %eax
+	jmp 2b
+3:	incq %rsi
+	decl %ecx
+	jnz 1b
+	testl $3, %ebx
+	jnz 7f
+	movl %ebx, %eax
+	shrl $2, %eax
+	jz 7f
+5:	cmpl $NCORES_MAX, %eax
+	jbe 6f
+	movl $NCORES_MAX, %eax
+6:	movl %eax, ncores(%rip)
+	popq %rbx
+	ret
+7:	movl $57, ncores(%rip)
+	popq %rbx
 	ret
 
 # pin_cpu: this thread onto CPU edi.
@@ -944,10 +1027,13 @@ pool_thread:
 	movq %fs:TLS_INDEX, %r12		# t
 	movq %fs:TLS_CORE, %r13		# core
 	movq %fs:TLS_MATE, %rsi
+	addl mate_base(%rip), %esi		# a slot under -O: hardware threads 1 and 2
 	movl %r13d, %edi
 	call pool_slot
 	leal 1(%rax,%r13,4), %edi
-	cmpl $228, %edi
+	movl ncores(%rip), %eax
+	shll $2, %eax			# past the last CPU: the last core's thread 3 is CPU 0
+	cmpl %eax, %edi
 	jb 1f
 	xorl %edi, %edi
 1:	call pin_cpu
@@ -1310,9 +1396,9 @@ vpu_pool_threads:
 vpu_pool_cores:
 	movl nthreads(%rip), %eax
 	incl %eax
-	cmpl $NCORES, %eax
+	cmpl ncores(%rip), %eax
 	jle 1f
-	movl $NCORES, %eax
+	movl ncores(%rip), %eax
 1:	ret
 
 # ---- bulk data between the window and card memory ----
@@ -1661,10 +1747,10 @@ trace_note:
 	call w_dec
 	leaq s_tr9(%rip), %rsi
 	call w_str
-	# its CPU: 1 + 4 core + slot, core = t mod 57, slot from pool_slot
+	# its CPU: 1 + 4 core + slot, core = t mod ncores, slot from pool_slot
 	movl %ebp, %eax
 	xorl %edx, %edx
-	movl $NCORES, %ecx
+	movl ncores(%rip), %ecx
 	divl %ecx
 	movl %edx, %edi
 	movl %eax, %esi
@@ -1776,6 +1862,7 @@ stage_note:
 	.section .rodata
 slot_order:	.byte 0, 3, 1, 2
 s_v:	.asciz "-v"
+s_O:	.asciz "-O"
 s_t:	.asciz "-t"
 s_s:	.asciz "-s"
 s_i:	.asciz "-i"
@@ -1786,6 +1873,7 @@ s_S:	.asciz "-S"
 s_C:	.asciz "-C"
 s_T:	.asciz "-T"
 s_R:	.asciz "-R"
+s_N:	.asciz "-N"
 s_cdma:	.asciz "cdma: "
 s_cdma_up:	.asciz "channel 7 carries the pull: ring and landing area at "
 s_cdma_win:	.asciz ", the window at "

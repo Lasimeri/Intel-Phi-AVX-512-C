@@ -65,6 +65,10 @@
 
 	.bss
 	.balign 64
+	.globl cdma_stats, cdma_dir
+cdma_stats:	.skip 64	# the engine's traffic: bytes into the card, bytes out, copies in, copies out (OFF_CDMA_STATS)
+cdma_dir:	.skip 8		# the copy being posted: 0 into the card (cdma_submit), 1 out of it (cdma_push)
+	.balign 64
 	.globl cdma_ready, cdma_regs, cdma_page, cdma_page_phys, cdma_land
 	.globl cdma_win_phys, cdma_win_bytes, cdma_seq, cdma_done, cdma_timeout
 	.globl cdma_dcr_before, cdma_dcr_after, cdma_tail0, cdma_err
@@ -451,6 +455,16 @@ cdma_submit:
 	cmpq %rax, %rdx
 	ja 90f
 	movq %rdx, %r10			# bytes
+	movq cdma_win_phys(%rip), %rax
+	addq %rax, %rdi			# the source: the window
+	movq cdma_page_phys(%rip), %rax
+	addq $CD_LAND, %rax
+	addq %rax, %rsi			# the destination: the landing area
+	movq $0, cdma_dir(%rip)		# into the card
+	# cdma_post (rdi = source, rsi = destination, card physical addresses
+	# the caller checked; r10 = bytes): the copy and its status, shared
+	# by cdma_submit (window to card) and cdma_push (card to window)
+cdma_post:
 	# room in the ring
 1:	movq cdma_seq(%rip), %rax
 	subq cdma_done(%rip), %rax
@@ -472,16 +486,13 @@ cdma_submit:
 	shlq $4, %r8
 	addq cdma_page(%rip), %r8	# the line of descriptors
 	# memcpy: src[39:0] | lines << 46; dst[39:0] | 1 << 60
-	movq cdma_win_phys(%rip), %rax
-	addq %rdi, %rax
+	movq %rdi, %rax
 	movq %r10, %rcx
 	shrq $6, %rcx
 	shlq $46, %rcx
 	orq %rcx, %rax
 	movq %rax, 0(%r8)
-	movq cdma_page_phys(%rip), %rax
-	addq $CD_LAND, %rax
-	addq %rsi, %rax
+	movq %rsi, %rax
 	movabsq $1 << 60, %rcx
 	orq %rcx, %rax
 	movq %rax, 8(%r8)
@@ -506,9 +517,55 @@ cdma_submit:
 	movq %rax, cdma_head(%rip)
 	movq cdma_regs(%rip), %rcx
 	movl %eax, R_DHPR(%rcx)
-3:	movq %r11, %rax
+3:	movq cdma_dir(%rip), %rax		# the counters by direction (OFF_CDMA_STATS):
+	leaq cdma_stats(%rip), %rcx		# bytes at 0 and 8, copies at 16 and 24
+	addq %r10, (%rcx,%rax,8)
+	incq 16(%rcx,%rax,8)
+	movq %r11, %rax
 	ret
 90:	xorl %eax, %eax
+	ret
+
+	.globl cdma_push
+# cdma_push(rdi = landing offset, rsi = window offset, rdx = bytes) ->
+# rax = the copy's sequence number, or 0 when refused: the other
+# direction of cdma_submit (card memory to the host window), the same
+# checks with the roles swapped (the source inside the landing area, the
+# destination inside the window), the same ring and completion
+# (cdma_wait). Clobbers rcx, rdx, rsi, rdi, r8 to r11.
+cdma_push:
+	cmpq $0, cdma_ready(%rip)
+	je 91f
+	movq %rdi, %rax
+	orq %rsi, %rax
+	orq %rdx, %rax
+	testq $63, %rax
+	jnz 91f
+	testq %rdx, %rdx
+	jz 91f
+	cmpq $CD_LEN_MAX, %rdx
+	ja 91f
+	cmpq $CD_LAND_MAX, %rdi
+	jae 91f
+	movq $CD_LAND_MAX, %rax
+	subq %rdi, %rax
+	cmpq %rax, %rdx
+	ja 91f
+	movq cdma_win_bytes(%rip), %rax
+	cmpq %rax, %rsi
+	jae 91f
+	subq %rsi, %rax
+	cmpq %rax, %rdx
+	ja 91f
+	movq %rdx, %r10			# bytes
+	movq cdma_page_phys(%rip), %rax
+	addq $CD_LAND, %rax
+	addq %rax, %rdi			# the source: the landing area
+	movq cdma_win_phys(%rip), %rax
+	addq %rax, %rsi			# the destination: the window
+	movq $1, cdma_dir(%rip)		# out of the card
+	jmp cdma_post
+91:	xorl %eax, %eax
 	ret
 
 	.globl cdma_poll
