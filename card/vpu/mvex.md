@@ -74,6 +74,7 @@ bytes; `MVEX_R` and `MVEX_M` add the rest; `MVEX_NDS`, `MVEX_RM` and
 | `VLOADUNPACKLD/HD VLOADUNPACKLPS/HPS` | MVEX.512.0F38.W0 D0 D4 D1 D5, no prefix, SSS a conversion | the kernel file |
 | `VPACKSTORELD/HD` | MVEX.512.66.0F38.W0 D0 D4 | knc-mvex's tests; the rewriter's unaligned stores on the card |
 | `VPBROADCASTD` | MVEX.512.66.0F38.W0 58 | the integer test |
+| `VBROADCASTSS` | MVEX.512.66.0F38.W0 18, SSS a conversion (`CV_F16` reads the two bytes of one float16) | `phi_q4_0_row1p`: the card check of 2026-11-09 passes with a block's float16 scale broadcast this way |
 | `VCVTFXPNTDQ2PS VCVTFXPNTPS2DQ VRNDFXPNTPS` | MVEX.512.0F3A.W0 CB (no prefix / 66) 52 ib | the kernel file |
 | `VEXP223PS VRCP23PS` | MVEX.512.66.0F38.W0 C8 CA | the kernel file (the SwiGLU kernels) |
 | `VCMPPS VCMPPD` | MVEX.NDS.512.0F.W0 C2 ib; 66.W1 | the probe test (pd); the rewriter (ps) |

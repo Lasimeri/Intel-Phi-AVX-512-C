@@ -8599,3 +8599,111 @@ phi_q4_0_8h:
     pop %rbx
     ret
     .size phi_q4_0_8h, .-phi_q4_0_8h
+
+# phi_q4_0_row1p: a Q4_0 weight row, or a segment of one, against 1 prepared activation row
+    .globl phi_q4_0_row1p
+    .type phi_q4_0_row1p, @function
+phi_q4_0_row1p:
+	VMOVAPS zmm0, r8, 0	# vmovaps zmm0, [r8+0]
+	VPXORD zmm1, zmm1, zmm1	# vpxord zmm1, zmm1, zmm1
+	VPXORD zmm2, zmm2, zmm2	# vpxord zmm2, zmm2, zmm2
+	VPXORD zmm3, zmm3, zmm3	# vpxord zmm3, zmm3, zmm3
+    lea 576(%rdi), %r10
+    cmp $4, %rdx
+    ja 1f
+    add %rcx, %r10
+1:
+	VPREFETCH0 r10, 0	# vprefetch0 [r10+0]
+	VPREFETCH0 r10, 64	# vprefetch0 [r10+64]
+	VPREFETCH0 r10, 128	# vprefetch0 [r10+128]
+	VPREFETCH1 rdi, 2304	# vprefetch1 [rdi+2304]
+	VPREFETCH1 rdi, 2368	# vprefetch1 [rdi+2368]
+	VPREFETCH1 rdi, 2432	# vprefetch1 [rdi+2432]
+	VLOADUNPACKLPS zmm8, rdi, 2, conv=CV_U8	# vloadunpacklps zmm8, [rdi+2]{uint8}
+	VLOADUNPACKLPS zmm9, rdi, 20, conv=CV_U8	# vloadunpacklps zmm9, [rdi+20]{uint8}
+	VLOADUNPACKLPS zmm10, rdi, 38, conv=CV_U8	# vloadunpacklps zmm10, [rdi+38]{uint8}
+	VLOADUNPACKLPS zmm11, rdi, 56, conv=CV_U8	# vloadunpacklps zmm11, [rdi+56]{uint8}
+	VLOADUNPACKHPS zmm8, rdi, 66, conv=CV_U8	# vloadunpackhps zmm8, [rdi+66]{uint8}
+	VLOADUNPACKHPS zmm9, rdi, 84, conv=CV_U8	# vloadunpackhps zmm9, [rdi+84]{uint8}
+	VLOADUNPACKHPS zmm10, rdi, 102, conv=CV_U8	# vloadunpackhps zmm10, [rdi+102]{uint8}
+	VLOADUNPACKHPS zmm11, rdi, 120, conv=CV_U8	# vloadunpackhps zmm11, [rdi+120]{uint8}
+	VBROADCASTSS zmm16, rdi, 0, conv=CV_F16	# vbroadcastss zmm16, [rdi+0]{float16}
+	VBROADCASTSS zmm17, rdi, 18, conv=CV_F16	# vbroadcastss zmm17, [rdi+18]{float16}
+	VBROADCASTSS zmm18, rdi, 36, conv=CV_F16	# vbroadcastss zmm18, [rdi+36]{float16}
+	VBROADCASTSS zmm19, rdi, 54, conv=CV_F16	# vbroadcastss zmm19, [rdi+54]{float16}
+	VMULPS zmm12, zmm8, r9, 24, conv=CV_1TO16	# vmulps zmm12, zmm8, [r9+24]{1to16}
+	VMULPS zmm13, zmm9, r9, 24, conv=CV_1TO16	# vmulps zmm13, zmm9, [r9+24]{1to16}
+	VMULPS zmm14, zmm10, r9, 24, conv=CV_1TO16	# vmulps zmm14, zmm10, [r9+24]{1to16}
+	VMULPS zmm15, zmm11, r9, 24, conv=CV_1TO16	# vmulps zmm15, zmm11, [r9+24]{1to16}
+	VMULPS zmm8, zmm8, rsi, 0	# vmulps zmm8, zmm8, [rsi+0]
+	VMULPS zmm9, zmm9, rsi, 128	# vmulps zmm9, zmm9, [rsi+128]
+	VMULPS zmm10, zmm10, rsi, 256	# vmulps zmm10, zmm10, [rsi+256]
+	VMULPS zmm11, zmm11, rsi, 384	# vmulps zmm11, zmm11, [rsi+384]
+	VRNDFXPNTPS zmm12, zmm12, 1	# vrndfxpntps zmm12, zmm12, 1
+	VRNDFXPNTPS zmm13, zmm13, 1	# vrndfxpntps zmm13, zmm13, 1
+	VRNDFXPNTPS zmm14, zmm14, 1	# vrndfxpntps zmm14, zmm14, 1
+	VRNDFXPNTPS zmm15, zmm15, 1	# vrndfxpntps zmm15, zmm15, 1
+	VFMADD231PS zmm8, zmm12, rsi, 64	# vfmadd231ps zmm8, zmm12, [rsi+64]
+	VFMADD231PS zmm9, zmm13, rsi, 192	# vfmadd231ps zmm9, zmm13, [rsi+192]
+	VFMADD231PS zmm10, zmm14, rsi, 320	# vfmadd231ps zmm10, zmm14, [rsi+320]
+	VFMADD231PS zmm11, zmm15, rsi, 448	# vfmadd231ps zmm11, zmm15, [rsi+448]
+	VSUBPS zmm8, zmm8, rsi, 1024, conv=CV_4TO16	# vsubps zmm8, zmm8, [rsi+1024]{4to16}
+	VSUBPS zmm9, zmm9, rsi, 1040, conv=CV_4TO16	# vsubps zmm9, zmm9, [rsi+1040]{4to16}
+	VSUBPS zmm10, zmm10, rsi, 1056, conv=CV_4TO16	# vsubps zmm10, zmm10, [rsi+1056]{4to16}
+	VSUBPS zmm11, zmm11, rsi, 1072, conv=CV_4TO16	# vsubps zmm11, zmm11, [rsi+1072]{4to16}
+	VFMADD231PS zmm0, zmm8, zmm16	# vfmadd231ps zmm0, zmm8, zmm16
+	VFMADD231PS zmm1, zmm9, zmm17	# vfmadd231ps zmm1, zmm9, zmm17
+	VFMADD231PS zmm2, zmm10, zmm18	# vfmadd231ps zmm2, zmm10, zmm18
+	VFMADD231PS zmm3, zmm11, zmm19	# vfmadd231ps zmm3, zmm11, zmm19
+	VLOADUNPACKLPS zmm8, rdi, 74, conv=CV_U8	# vloadunpacklps zmm8, [rdi+74]{uint8}
+	VLOADUNPACKLPS zmm9, rdi, 92, conv=CV_U8	# vloadunpacklps zmm9, [rdi+92]{uint8}
+	VLOADUNPACKLPS zmm10, rdi, 110, conv=CV_U8	# vloadunpacklps zmm10, [rdi+110]{uint8}
+	VLOADUNPACKLPS zmm11, rdi, 128, conv=CV_U8	# vloadunpacklps zmm11, [rdi+128]{uint8}
+	VLOADUNPACKHPS zmm8, rdi, 138, conv=CV_U8	# vloadunpackhps zmm8, [rdi+138]{uint8}
+	VLOADUNPACKHPS zmm9, rdi, 156, conv=CV_U8	# vloadunpackhps zmm9, [rdi+156]{uint8}
+	VLOADUNPACKHPS zmm10, rdi, 174, conv=CV_U8	# vloadunpackhps zmm10, [rdi+174]{uint8}
+	VLOADUNPACKHPS zmm11, rdi, 192, conv=CV_U8	# vloadunpackhps zmm11, [rdi+192]{uint8}
+	VBROADCASTSS zmm16, rdi, 72, conv=CV_F16	# vbroadcastss zmm16, [rdi+72]{float16}
+	VBROADCASTSS zmm17, rdi, 90, conv=CV_F16	# vbroadcastss zmm17, [rdi+90]{float16}
+	VBROADCASTSS zmm18, rdi, 108, conv=CV_F16	# vbroadcastss zmm18, [rdi+108]{float16}
+	VBROADCASTSS zmm19, rdi, 126, conv=CV_F16	# vbroadcastss zmm19, [rdi+126]{float16}
+	VMULPS zmm12, zmm8, r9, 24, conv=CV_1TO16	# vmulps zmm12, zmm8, [r9+24]{1to16}
+	VMULPS zmm13, zmm9, r9, 24, conv=CV_1TO16	# vmulps zmm13, zmm9, [r9+24]{1to16}
+	VMULPS zmm14, zmm10, r9, 24, conv=CV_1TO16	# vmulps zmm14, zmm10, [r9+24]{1to16}
+	VMULPS zmm15, zmm11, r9, 24, conv=CV_1TO16	# vmulps zmm15, zmm11, [r9+24]{1to16}
+	VMULPS zmm8, zmm8, rsi, 512	# vmulps zmm8, zmm8, [rsi+512]
+	VMULPS zmm9, zmm9, rsi, 640	# vmulps zmm9, zmm9, [rsi+640]
+	VMULPS zmm10, zmm10, rsi, 768	# vmulps zmm10, zmm10, [rsi+768]
+	VMULPS zmm11, zmm11, rsi, 896	# vmulps zmm11, zmm11, [rsi+896]
+	VRNDFXPNTPS zmm12, zmm12, 1	# vrndfxpntps zmm12, zmm12, 1
+	VRNDFXPNTPS zmm13, zmm13, 1	# vrndfxpntps zmm13, zmm13, 1
+	VRNDFXPNTPS zmm14, zmm14, 1	# vrndfxpntps zmm14, zmm14, 1
+	VRNDFXPNTPS zmm15, zmm15, 1	# vrndfxpntps zmm15, zmm15, 1
+	VFMADD231PS zmm8, zmm12, rsi, 576	# vfmadd231ps zmm8, zmm12, [rsi+576]
+	VFMADD231PS zmm9, zmm13, rsi, 704	# vfmadd231ps zmm9, zmm13, [rsi+704]
+	VFMADD231PS zmm10, zmm14, rsi, 832	# vfmadd231ps zmm10, zmm14, [rsi+832]
+	VFMADD231PS zmm11, zmm15, rsi, 960	# vfmadd231ps zmm11, zmm15, [rsi+960]
+	VSUBPS zmm8, zmm8, rsi, 1088, conv=CV_4TO16	# vsubps zmm8, zmm8, [rsi+1088]{4to16}
+	VSUBPS zmm9, zmm9, rsi, 1104, conv=CV_4TO16	# vsubps zmm9, zmm9, [rsi+1104]{4to16}
+	VSUBPS zmm10, zmm10, rsi, 1120, conv=CV_4TO16	# vsubps zmm10, zmm10, [rsi+1120]{4to16}
+	VSUBPS zmm11, zmm11, rsi, 1136, conv=CV_4TO16	# vsubps zmm11, zmm11, [rsi+1136]{4to16}
+	VFMADD231PS zmm0, zmm8, zmm16	# vfmadd231ps zmm0, zmm8, zmm16
+	VFMADD231PS zmm1, zmm9, zmm17	# vfmadd231ps zmm1, zmm9, zmm17
+	VFMADD231PS zmm2, zmm10, zmm18	# vfmadd231ps zmm2, zmm10, zmm18
+	VFMADD231PS zmm3, zmm11, zmm19	# vfmadd231ps zmm3, zmm11, zmm19
+    add $144, %rdi
+    add $144, %r10
+    add $1152, %rsi
+    dec %rdx
+    cmp $4, %rdx
+    jne 2f
+    add %rcx, %r10
+2:
+    test %rdx, %rdx
+    jnz 1b
+	VADDPS zmm0, zmm0, zmm1	# vaddps zmm0, zmm0, zmm1
+	VADDPS zmm2, zmm2, zmm3	# vaddps zmm2, zmm2, zmm3
+	VADDPS zmm0, zmm0, zmm2	# vaddps zmm0, zmm0, zmm2
+	VMOVAPS_ST r8, 0, zmm0	# vmovaps [r8+0], zmm0
+    ret
+    .size phi_q4_0_row1p, .-phi_q4_0_row1p

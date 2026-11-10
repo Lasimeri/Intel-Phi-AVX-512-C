@@ -60,6 +60,69 @@ exactly.
 - `run_pieces`, `rows_slice_q`, `rows_slice_multi`: a slice's rows of one
   matrix, or of each matrix of a request of several, cut as one.
 
+## Q4_0 against one row: the prepared row (2026-11-09)
+
+A Q4_0 group of one column does not go superblock by superblock. Its
+activation row is rewritten once by every thread (`q4_0_prepare`: per
+block `x0`, `y = x1 - 16 x0` and the four floats `p`, `kernels.md`,
+"Q4_0, one row, prepared") and `phi_q4_0_row1p` then takes this thread's
+weight rows a whole row a call (or a segment of each, below), the rows outermost: at one activation
+row the whole prepared row stays in the first-level cache, so nothing
+is gained by keeping a superblock's activations hot across the rows,
+and a row is one sequential stream the prefetch can lead.
+
+It is taken when all of these hold, and `phi_q4_0_1` with the
+superblocks outermost runs otherwise:
+
+| condition | why |
+| --- | --- |
+| `q40_prep_ok`: the request is one matrix against one activation row, no mixture (`matmul.S` sets it around the dispatch) | the buffer is shared, below |
+| the row is at most `PREP_SB_MAX` superblocks (128: 32768 weights) | the core's buffer, 147456 bytes |
+| the range still has `PREP_ROWS_MIN` rows (24) | the preparation is about 96 vector operations a superblock; 1024 x 5120, nine rows a slice, measured 5 % slower with it |
+
+Two things decided the design, both found by measuring, not by
+reading the code:
+
+- **The dispatcher takes a slice of every request itself.** With a
+  buffer for pool threads only, the dispatcher ran `phi_q4_0_1` and its
+  slice set the request's time whatever the pool did (the worker's `-t`
+  trace: `dispatcher's slice 1182.7` of a 1480.5 us dispatch): three
+  kernels of 114, 77 and 77 operations measured alike. With the
+  dispatcher on the prepared path one slice a core went from 1.81 to
+  1.15 ms (17408 x 5120).
+- **The buffer is the core's, not the thread's** (`prep_bufs`, indexed
+  by `TLS_CORE`; the dispatcher has the last core to itself). Two
+  threads of a core with 23040 bytes each put 46080 bytes through one
+  32 KiB cache: 1.48 ms at two slices a core where one took 1.15. With
+  one buffer a core: 0.67 ms. Both threads fill it with the same bytes
+  and each reads it only after its own fill, so a load sees the row
+  whichever of the two stores it follows; no lock. That argument needs
+  every thread of the dispatch to prepare the same row, which is what
+  `q40_prep_ok` asserts. The same effect outside the worker
+  (`tools/q4_0-stream.md`): the kernel as one stream a core costs 200.5
+  to 201.3 cycles a superblock, as two streams a core with a row each
+  560.5 apiece, less work a core than one stream.
+
+- **A longer row goes in segments, and half-size ones.** A prepared row
+  of more than 5120 weights does not fit the cache (17408 weights are
+  78336 bytes), so its columns are walked in segments, the segments
+  outermost and the thread's rows inside; the kernel adds to the row's
+  accumulator, and its prefetch is told the jump from the end of one
+  row's run to the start of the next row's (`phi_q4_0_row1p`'s sixth
+  argument). With segments of 20 superblocks (23040 bytes, `PREP_SEG`)
+  5120 x 17408 gained nothing (1.054, 1.092, 1.118 ms against 1.054,
+  1.122, 1.034), and the trace said why: the dispatcher, alone on its
+  core, took 627 us for its slice and the longest pool slice 891. The
+  two threads of a core are on different segments most of the time,
+  two times 23040 bytes in one cache. With segments of 10
+  (`PREP_SEG_LONG`, 11520 bytes: two fit) it is 0.889, 0.866 ms
+  against 1.043, 1.026, 1.037 (the two workers deployed in turn, 120
+  slices), and a row of one segment is unchanged (17408 x 5120: 0.652,
+  0.668 against 0.662, 0.641, 0.636).
+
+`rows_range_q` remembers in its frame the row it prepared (`RQ_PREP_X`),
+so a call prepares once however many chunks it walks.
+
 ## The sums: the vector unit (2026-11-09)
 
 A result is the sixteen partial sums of its accumulator vector added

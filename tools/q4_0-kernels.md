@@ -1,11 +1,12 @@
 # q4_0-kernels.c
 
-Prints the six Q4_0 kernels of `card/vpu/kernels.S`: `phi_q4_0_1`,
+Prints the seven Q4_0 kernels of `card/vpu/kernels.S`: `phi_q4_0_1`,
 `phi_q4_0_4`, `phi_q4_0_8` and their float16-activation twins
-`phi_q4_0_1h`, `phi_q4_0_4h`, `phi_q4_0_8h`, in that file's line format
+`phi_q4_0_1h`, `phi_q4_0_4h`, `phi_q4_0_8h`, and `phi_q4_0_row1p` (below,
+"The prepared row"), in that file's line format
 (the `mvex.inc` macro that assembles, a tab, the instruction in Intel
 syntax as a comment). Its output was appended to `kernels.S` on
-2026-11-09; the program stays as the record of how those 1263 lines were
+2026-11-09; the program stays as the record of how those 1371 lines were
 made and as the way to make them again.
 
 ```
@@ -48,6 +49,30 @@ zmm16 the scales; the activation rows' bases are `rsi`, `r10`, `r11`,
 eight-row kernels. A stage is written for the whole batch of four blocks
 before the next stage, so dependent instructions sit a batch apart.
 
+## The prepared row
+
+`phi_q4_0_row1p(row rdi, prepared rsi, ns rdx, jump rcx, acc r8, consts r9)`
+takes `ns` superblocks of a weight row (the whole row, or a segment of
+it) against one activation row that
+`card/vpu/rows.S` (`q4_0_prepare`) has rewritten, and is what a
+one-row request runs, for rows of up to 32768 weights
+(`card/vpu/rows.md`, "Q4_0 against one row"). The identity, the
+prepared layout and the measurements are in `card/vpu/kernels.md`,
+"Q4_0, one row, prepared". What the generator emits (`kernel_prepared`):
+
+| step | instructions |
+| --- | --- |
+| the accumulators | `vmovaps zmm0, [r8]`, zmm1..3 cleared, once a row |
+| the stream | three `vprefetch0` through `r10`, which starts at `rdi + 576`, advances with the row and takes the jump (`rcx`: the distance from the end of these superblocks to the ones the caller gives next, 0 when they follow on) when four superblocks are left; three `vprefetch1` at `rdi + 2304`; each superblock |
+| per batch of four blocks | four `vloadunpacklps` then four `vloadunpackhps` `{uint8}` (zmm8..11); four `vbroadcastss {float16}` of the scales (zmm16..19); `vmulps` by 2^-4 into zmm12..15; `vmulps zmm8.., [rsi + 128 i]`; `vrndfxpntps` round down; `vfmadd231ps zmm8.., zmm12.., [rsi + 128 i + 64]`; `vsubps zmm8.., [rsi + 1024 + 16 i]{4to16}`; `vfmadd231ps` into zmm0..3 by the scale |
+| the loop | `rdi` + 144, `r10` + 144, `rsi` + 1152, `rdx` - 1 |
+| the end | the four accumulators added (zmm0 began as `[r8]`, so a row given in segments accumulates), stored to `[r8]` |
+
+The two halves of an unpack pair are a batch apart (the high half
+merges into the register the low half wrote), and so is every other
+dependent pair. It keeps every general register but `rax`, `rdx`,
+`rsi`, `rdi` and `r10`.
+
 ## Checks
 
 - Assembled alone with `mvex.inc`: 11136 bytes of text, six symbols.
@@ -58,3 +83,8 @@ before the next stage, so dependent instructions sit a batch apart.
   mixture, several-matrix and fused feed-forward case ok. The card's
   compute time at 4096 x 5120: float32 activations 139.3 GFLOP/s at one
   row, 246.4 at eight, 251.3 at sixty-four; float16 126.4, 452.9, 490.3.
+- The row kernel (2026-11-09): the worker with it is 272904 bytes
+  (`card/vpu/build.sh`, audit `0 illegal, 0 suspect, 8349 KNC vector`);
+  `matmul-check --only q4_0` passes with `--act 0` and `--act 1` at 57,
+  114, 121, 181 and 241 threads; its cycle counts and the service's
+  times are in `card/vpu/kernels.md` and `tools/q4_0-bench.md`.

@@ -675,7 +675,40 @@ fused_setup:
 	.set RQ_TSTEP, RQ_FMT + 160		# T vectors: a row's accumulators
 	.set RQ_MINE, RQ_FMT + 168		# the rows this thread takes of the chunk
 	.set RQ_BASE0, RQ_FMT + 176		# the first of them, in the group's matrix
-	.set RQ_FRAME, RQ_FMT + 192
+	.set RQ_PREP, RQ_FMT + 184		# this thread's prepared activations when the group runs phi_q4_0_row1p, else 0
+	.set RQ_PREP_X, RQ_FMT + 192		# the activation row they were prepared from, in this call
+	.set RQ_SEG, RQ_FMT + 200		# the superblocks of the segment being walked
+	.set RQ_FRAME, RQ_FMT + 208
+
+# A Q4_0 matrix against one activation row (a token's multiply) runs
+# phi_q4_0_row1p on activations each thread prepares once a call
+# (q4_0_prepare): a superblock of PREP_SB bytes, sixteen vectors and
+# eight groups of four floats (kernels.md, "Q4_0, one row, prepared").
+# The columns go in segments of PREP_SEG superblocks (5120 weights:
+# 23040 prepared bytes, which stay in the 32 KiB first-level cache
+# beside a weight row), the segments outermost and this thread's rows
+# inside, so a row of up to 5120 weights is one call a row and a longer
+# one a call a row a segment. It is taken for rows of up to PREP_SB_MAX
+# superblocks (the buffer) when the range still has PREP_ROWS_MIN rows
+# to repay the preparation; every other case runs phi_q4_0_1 with the
+# superblocks outermost.
+#
+# The buffer is the core's (TLS_CORE; the dispatcher, which takes a slice
+# of every request itself, has the last core to itself): two threads of
+# a core each walking 23040 bytes of their own every row put 46080 bytes
+# through one 32 KiB first-level cache (measured 2026-11-09: 1.48 ms
+# where one thread a core took 1.15). Both threads fill it, with the
+# same bytes, and each reads it only after its own fill, so a load sees
+# the row whichever store it follows; that holds while every thread of
+# the request prepares the same activation row, which matmul.S says with
+# q40_prep_ok (one matrix, one row, no mixture) around the dispatch.
+	.set PREP_SB, 1152
+	.set PREP_SEG, 20
+	.set PREP_SEG_LONG, 10			# a longer row: the two threads of a core are on different segments, and two of 11520 bytes fit one cache
+	.set PREP_SB_MAX, 128
+	.set PREP_BYTES, PREP_SB * PREP_SB_MAX
+	.set PREP_CORES, 64
+	.set PREP_ROWS_MIN, 24
 
 # rows_range_q: rows rsi..rdx of the job rdi, shared with r8d threads on
 # the same core as ecx (slice_rows): chunks of ROW_CHUNK rows; within a
@@ -716,6 +749,7 @@ rows_range_q:
 	movq MJ_K(%rbx), %rax
 	andq $255, %rax
 	movq %rax, RQ_TAIL(%rbp)
+	movq $0, RQ_PREP_X(%rbp)
 1:	cmpq RQ_I1(%rbp), %r12
 	jae 99f
 	movq RQ_I1(%rbp), %rax			# rows = min(i1 - i, chunk)
@@ -763,7 +797,41 @@ rows_range_q:
 6:	movq RQ_FMT(%rbp), %rcx
 	movq FMT_K(%rcx,%rax,8), %rax
 	movq %rax, RQ_KERN(%rbp)
-	# mine = the rows the pair (r0, rstep) gives this thread; accumulators to zero
+	# Q4_0 against one row: the prepared row kernel, on this thread's
+	# buffer, filled when the row is not the one it holds from earlier in
+	# this call (and then only with rows enough left to repay it)
+	movq $0, RQ_PREP(%rbp)
+	cmpl $MM_Q4_0, MJ_TYPE(%rbx)
+	jne 61f
+	cmpq $1, RQ_T(%rbp)
+	jne 61f
+	movq RQ_NS(%rbp), %rdx
+	cmpq $PREP_SB_MAX, %rdx
+	ja 61f
+	cmpl $0, q40_prep_ok(%rip)		# one matrix, one activation row (matmul.S)
+	je 61f
+	movq %fs:TLS_CORE, %rax			# the core's buffer, its threads' both
+	cmpq $PREP_CORES, %rax
+	jae 61f
+	imulq $PREP_BYTES, %rax, %rax
+	leaq prep_bufs(%rip), %rdi
+	addq %rax, %rdi
+	movq RQ_G(%rbp), %rax
+	movq RQ_C0(%rbp), %rcx
+	movq G_X(%rax,%rcx,8), %rsi
+	cmpq RQ_PREP_X(%rbp), %rsi
+	je 60f
+	movq RQ_I1(%rbp), %rax
+	subq %r12, %rax
+	cmpq $PREP_ROWS_MIN, %rax
+	jb 61f
+	movq %rsi, RQ_PREP_X(%rbp)
+	movq %rdi, RQ_PREP(%rbp)
+	movl MJ_B_TYPE(%rbx), %ecx
+	call q4_0_prepare
+	jmp 61f
+60:	movq %rdi, RQ_PREP(%rbp)
+61:	# mine = the rows the pair (r0, rstep) gives this thread; accumulators to zero
 	xorl %esi, %esi
 	movq RQ_R0(%rbp), %rcx
 7:	cmpq RQ_ROWS(%rbp), %rcx
@@ -793,7 +861,48 @@ rows_range_q:
 	movq RQ_G(%rbp), %rdx
 	addq G_A(%rdx), %rax
 	movq %rax, RQ_BASE0(%rbp)
-	# superblock outermost
+	# the prepared row: the segments outermost, this thread's rows inside,
+	# each a sequential run of the segment's bytes:
+	# rowkern(row + 144 s, prepared + PREP_SB s, seg, acc, consts, jump),
+	# the jump the distance from a run's end to the next row's run (the
+	# kernel's prefetch takes it; it keeps r13, r14, r15)
+	cmpq $0, RQ_PREP(%rbp)
+	je 10f
+	cmpq $0, RQ_MINE(%rbp)
+	je 20f
+	movq $0, RQ_S(%rbp)
+18:	movq RQ_NS(%rbp), %rax
+	movl $PREP_SEG, %ecx			# a row of one segment: the whole row
+	cmpq %rcx, %rax
+	jbe 182f
+	movl $PREP_SEG_LONG, %ecx		# of several: two different ones fit the cache
+182:	subq RQ_S(%rbp), %rax
+	jbe 20f
+	cmpq %rcx, %rax
+	jbe 181f
+	movq %rcx, %rax
+181:	movq %rax, RQ_SEG(%rbp)
+	movq RQ_MINE(%rbp), %r13
+	imulq $144, RQ_S(%rbp), %r14
+	addq RQ_BASE0(%rbp), %r14
+	leaq RQ_ACC(%rbp), %r15
+17:	movq %r14, %rdi
+	imulq $PREP_SB, RQ_S(%rbp), %rsi
+	addq RQ_PREP(%rbp), %rsi
+	movq RQ_SEG(%rbp), %rdx
+	movq %r15, %r8
+	leaq g_consts(%rip), %r9
+	imulq $-144, %rdx, %rcx
+	addq RQ_STRIDE(%rbp), %rcx
+	call phi_q4_0_row1p
+	addq RQ_STRIDE(%rbp), %r14
+	addq $64, %r15
+	decq %r13
+	jnz 17b
+	movq RQ_SEG(%rbp), %rax
+	addq %rax, RQ_S(%rbp)
+	jmp 18b
+10:	# superblock outermost
 	movq $0, RQ_S(%rbp)
 11:	movq RQ_S(%rbp), %r9
 	cmpq RQ_NS(%rbp), %r9
@@ -916,6 +1025,97 @@ rows_range_q:
 	popq %rbx
 	popq %rbp
 	ret
+
+# One block of q4_0_prepare: x0 kept, y = x1 - 16 x0, and the four floats
+# p whose sum times four is 8 * sum(x0 + x1): x0 + x1 folded to its four
+# sums by lane mod 4 (two rotations, zmm6 by eight lanes and zmm7 by
+# four), doubled, and the four lanes of the block's place stored under
+# its mask.
+	.macro Q40_PREP_BLOCK i, k, half
+	.if \half
+	VMOVAPS zmm0, rsi, (64*\i), conv=CV_F16
+	VMOVAPS zmm1, rsi, (64*\i+32), conv=CV_F16
+	.else
+	VMOVAPS zmm0, rsi, (128*\i)
+	VMOVAPS zmm1, rsi, (128*\i+64)
+	.endif
+	VADDPS zmm2, zmm0, zmm1
+	VFNMADD231PS zmm1, zmm0, r9, 0, conv=CV_1TO16
+	VMOVAPS_ST rdi, (128*\i), zmm0
+	VMOVAPS_ST rdi, (128*\i+64), zmm1
+	VPERMD zmm3, zmm6, zmm2
+	VADDPS zmm2, zmm2, zmm3
+	VPERMD zmm3, zmm7, zmm2
+	VADDPS zmm2, zmm2, zmm3
+	VMULPS zmm2, zmm2, r9, 8, conv=CV_1TO16
+	VMOVAPS_ST rdi, (1024+64*(\i>>2)), zmm2, k=\k
+	.endm
+
+# q4_0_prepare(dst rdi, x rsi, ns rdx, b_type ecx): an activation row of
+# ns superblocks (256 float32 each, or float16 when ecx is 1) rewritten
+# for phi_q4_0_1p: per superblock PREP_SB bytes, for block i the vector
+# x0 = x[32 i..] at 128 i, y = x[32 i + 16..] - 16 x0 at 128 i + 64, and
+# at 1024 + 16 i four floats p with 4 sum(p) = 8 sum(x[32 i..32 i + 31]).
+# With b a block's bytes and hi = floor(b / 16):
+#   sum (lo - 8) x0 + (hi - 8) x1 = sum b x0 + hi y - p{4to16}.
+# Clobbers rax, rdx, rsi, rdi, r9, zmm0..3, zmm6, zmm7, k1..k4.
+q4_0_prepare:
+	leaq g_consts(%rip), %r9
+	leaq prep_rot(%rip), %rax
+	VMOVDQA32 zmm6, rax, 0
+	VMOVDQA32 zmm7, rax, 64
+	movl $0x000f, %eax
+	KMOV_KR k1, eax
+	movl $0x00f0, %eax
+	KMOV_KR k2, eax
+	movl $0x0f00, %eax
+	KMOV_KR k3, eax
+	movl $0xf000, %eax
+	KMOV_KR k4, eax
+	testl %ecx, %ecx
+	jnz 2f
+1:	testq %rdx, %rdx
+	jz 9f
+	Q40_PREP_BLOCK 0, k1, 0
+	Q40_PREP_BLOCK 1, k2, 0
+	Q40_PREP_BLOCK 2, k3, 0
+	Q40_PREP_BLOCK 3, k4, 0
+	Q40_PREP_BLOCK 4, k1, 0
+	Q40_PREP_BLOCK 5, k2, 0
+	Q40_PREP_BLOCK 6, k3, 0
+	Q40_PREP_BLOCK 7, k4, 0
+	addq $1024, %rsi
+	addq $PREP_SB, %rdi
+	decq %rdx
+	jmp 1b
+2:	testq %rdx, %rdx
+	jz 9f
+	Q40_PREP_BLOCK 0, k1, 1
+	Q40_PREP_BLOCK 1, k2, 1
+	Q40_PREP_BLOCK 2, k3, 1
+	Q40_PREP_BLOCK 3, k4, 1
+	Q40_PREP_BLOCK 4, k1, 1
+	Q40_PREP_BLOCK 5, k2, 1
+	Q40_PREP_BLOCK 6, k3, 1
+	Q40_PREP_BLOCK 7, k4, 1
+	addq $512, %rsi
+	addq $PREP_SB, %rdi
+	decq %rdx
+	jmp 2b
+9:	ret
+
+	.section .rodata
+	.balign 64
+prep_rot:
+	.long 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7	# by eight lanes
+	.long 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3	# by four
+	.bss
+	.balign 64
+prep_bufs:	.skip PREP_CORES * PREP_BYTES
+	.balign 64
+	.globl q40_prep_ok
+q40_prep_ok:	.skip 64		# set by the dispatcher around a dispatch whose threads all prepare one row
+	.text
 
 # q8_0_tail(blk rdi, x rsi, n edx, b_type ecx, acc r8, scratch r9): the
 # blocks of a Q8_0 row past the last superblock (a row may end with fewer

@@ -290,6 +290,13 @@
 	.macro VPBROADCASTD dst, base, disp, k=0
 	MVEX_M MAP_0F38, PP_66, 0, 0x58, \dst, 0, \base, \disp, 0, \k
 	.endm
+# vbroadcastss dst, [base + disp]: one float32 to the sixteen lanes, or
+# with a conversion one float16 or integer converted first
+# (MVEX.512.66.0F38.W0 18 /r, Uf32(mt): the memory read is one element of
+# the converted size, two bytes for CV_F16).
+	.macro VBROADCASTSS dst, base, disp, conv=0, k=0
+	MVEX_M MAP_0F38, PP_66, 0, 0x18, \dst, 0, \base, \disp, \conv, \k
+	.endm
 
 # ---- stores: `base, disp, src` ----
 	.macro VMOVAPS_ST base, disp, src, conv=0, k=0, eh=0

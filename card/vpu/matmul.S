@@ -168,8 +168,11 @@ copy_pool:
 	movl %ecx, %edx
 	jmp vpu_pool_map
 
-# map_threads: edi clamped to 1..min(pool + 1, two threads on each of the
-# card's cores: 114 on a 3120A, 122 on a 7120A), in eax.
+# map_threads: edi clamped to 1..min(pool + 1, every hardware thread of
+# the card's cores: 228 on a 3120A, 244 on a 7120A), in eax. The pool
+# the worker is started with decides how many a core has (its thread t
+# is on core t mod the cores, worker.S create_thread); the cap was two a
+# core until 2026-11-09.
 map_threads:
 	pushq %rdi
 	call vpu_pool_threads
@@ -177,7 +180,7 @@ map_threads:
 	incl %eax
 	pushq %rcx
 	movl ncores(%rip), %ecx
-	addl %ecx, %ecx
+	shll $2, %ecx
 	cmpl %ecx, %eax
 	jle 1f
 	movl %ecx, %eax
@@ -2401,10 +2404,21 @@ vpu_matmul_run:
 45:	MARK 3
 	call now_ns
 	movq %rax, r_c0(%rip)
+	# one matrix against one activation row and no mixture: every thread
+	# of this dispatch prepares the same row, so the threads of a core may
+	# share a prepared buffer (rows.S, q40_prep_ok)
+	xorl %eax, %eax
+	cmpq $1, MM_N(%rbx)
+	jne 451f
+	cmpq $0, r_mixture(%rip)
+	jne 451f
+	movl $1, %eax
+451:	movl %eax, q40_prep_ok(%rip)
 	movq r_slice(%rip), %rdi
 	movq %r13, %rsi
 	movl r_threads(%rip), %edx
 	call vpu_pool_map
+	movl $0, q40_prep_ok(%rip)
 	movq r_plive(%rip), %rcx
 	movl %eax, (%rcx)
 	call times_after_compute

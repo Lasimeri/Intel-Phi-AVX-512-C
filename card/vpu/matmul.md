@@ -94,6 +94,39 @@ what is where in the assembly and what its gates were.
   the longest wait past the copy's completion, the longest activation
   warm-up, the longest rows phase and its thread (`vpu_phase`,
   `rows.md`), which is what found the slow mode of the fused copy.
+- **`q40_prep_ok`** (2026-11-09): set to 1 around the dispatch of a
+  request of one matrix against one activation row with no mixture
+  (label 45, `MM_N` 1 and `r_mixture` 0), 0 otherwise. It tells
+  `rows_range_q` that every thread of the dispatch prepares the same
+  activation row, which is the condition under which the threads of a
+  core may share one prepared buffer (`rows.md`, "Q4_0 against one row").
+- **`map_threads`** (2026-11-09): a request's threads are clamped to
+  the pool plus the dispatcher and to four a core, where the clamp was
+  two a core. The pool the worker is started with decides (its thread
+  `t` is on core `t` mod the cores, `worker.S` `create_thread`: 121
+  threads are two a core on a 7120A, 181 three, 241 four). Measured on
+  card 0, Q4_0, float16 activations, each pool with as many slices,
+  best of 15, the rounds in order (`matmul-check --only q4_0 --act 1
+  --threads N --repeat 15`):
+
+  | shape | two a core (121) | three (181) | four (241) |
+  | --- | --- | --- | --- |
+  | 17408 x 5120, one row | 0.640, 0.689 ms | 0.719, 0.700 ms | 0.783 ms |
+  | 5120 x 5120, one row | 0.254, 0.246 ms | 0.261, 0.258 ms | 0.329 ms |
+  | 17408 x 5120, eight rows | 2.720, 2.410 ms | 2.406, 2.297 ms | 2.125 ms |
+  | 5120 x 5120, eight rows | 0.671, 0.685 ms | 0.746, 0.735 ms | 0.702 ms |
+
+  A third thread costs 2 to 12 % at one row and gains 5 to 12 % on the
+  large shape at eight; two a core stays the start scripts' default.
+  The row kernel alone, as streams pinned to 40 cores with the
+  activations costing nothing (an unwritten row, `tools/q4_0-stream.md`),
+  gives a core 5.39 superblocks per 1000 cycles at one stream, 9.96 at
+  two, 10.90 at three and 10.86 at four: two threads already issue
+  nearly every cycle. With a prepared row of its own for every stream
+  (`tools/q4_0-bench.sh`, two runs) it is 4.97 to 4.99, 3.57, 4.69 to
+  4.70 and 5.55 to 5.56: the activations of two streams no longer fit
+  the core's first-level cache. The worker's threads of a core share
+  one row and lie between the two.
 
 ## Gates
 

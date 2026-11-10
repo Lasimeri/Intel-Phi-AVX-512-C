@@ -1,6 +1,6 @@
 # kernels.S: the dot-product kernels
 
-The card's matrix-multiply kernels: 47 routines the service (`matmul.S`,
+The card's matrix-multiply kernels: 48 routines the service (`matmul.S`,
 until the port completes `vpu_matmul.c`) calls per superblock or per
 row, written with the MVEX macros of `mvex.inc` around plain x86-64
 scaffolding. Hand-maintained since 2026-09-30. Before that the file was
@@ -18,6 +18,7 @@ about the kernels' design.
 | `phi_dot4_f16(a, b, k16, out, nb)`, `phi_dot4_f32` | one weight row against four activation rows `nb` bytes apart, 64 sums into `out` |
 | `phi_dot_bf16(a, b, k16, out)`, `phi_dot4_bf16(a, b, k16, out, nb)` | the same for bfloat16 weights: a `{uint16}` load zero-extends 16 of them into int32 lanes and `vpslld` by 16 puts each in a float32's high half, exactly the value it stands for (32-byte alignment as float16); 2026-10-08, for Flash Next BF16 |
 | `phi_{q4k,q5k,q6k,q8_0,iq4xs,q4_0}_{1,4,8}` and their `h` twins | one 256-weight superblock of a quantized row against 1, 4 or 8 activation rows, float32 or (`h`) float16 |
+| `phi_q4_0_row1p(row, prepared, ns, jump, acc, consts)` | `ns` superblocks of a Q4_0 weight row (the whole row, or a segment of it) against one prepared activation row (below, "Q4_0, one row, prepared") |
 | `phi_swiglu`, `phi_swiglu16`, `phi_swiglu_edge`, `phi_swiglu16_edge` | the feed-forward's SwiGLU on the vector unit |
 | `phi_copy64(dst, src, count)` | `count` 64-byte vectors, whole-vector loads and stores |
 | `phi_probe`, `phi_bench(kind, buf, count)` | the diagnostics of `phi-vpu matmul-check --probe` |
@@ -25,7 +26,9 @@ about the kernels' design.
 Every quantized kernel is emitted twice, `phi_q4k_8` reading float32
 activation rows and `phi_q4k_8h` float16 ones: the same instructions
 with `{float16}` on the product's memory operand and a 32-byte row
-stride, 36 kernels in all; the card picks the twin by the request's
+stride, 36 kernels in all (and `phi_q4_0_row1p`, which has no twin:
+its activations are prepared float32 whatever the request sent); the
+card picks the twin by the request's
 `b_type`. The float weight formats have no twin (their kernels are the
 `phi_dot4_*` family) and the card refuses a float16 activation request
 for them.
@@ -113,6 +116,71 @@ routine, unlike Q8_0's). Measured on card 0, 4096 x 5120, 114 threads,
 the card's compute time only (`matmul-check --only q4_0 --repeat 3`):
 float32 activations 139.3 GFLOP/s at one row, 246.4 at eight, 251.3 at
 sixty-four; float16 126.4, 452.9, 490.3.
+
+### Q4_0, one row, prepared (2026-11-09)
+
+Against one activation row (a token's multiply) a decoded weight feeds
+one product, so the decode is the cost: `phi_q4_0_1` is 114 vector
+operations a superblock, 16 of them one chain of masked scale loads.
+`phi_q4_0_row1p` does not compute the low nibble or the `q - 8`. With
+`b` a block's sixteen bytes as floats, `hi = floor(b / 16)`, `x0` and
+`x1` the block's two activation vectors:
+
+```
+sum (lo - 8) x0 + (hi - 8) x1  =  sum b x0 + hi (x1 - 16 x0) - 8 sum (x0 + x1)
+```
+
+The right side's `y = x1 - 16 x0` and the last term depend on the
+activations alone, so `rows.S` (`q4_0_prepare`) computes them once a
+request: a prepared superblock is 1152 bytes, `x0` at `128 i`, `y` at
+`128 i + 64`, and at `1024 + 16 i` four floats `p` that a `{4to16}`
+operand subtracts from all sixteen lanes (`4 sum(p) = 8 sum(x0 + x1)`:
+no reduction to one lane is needed, two rotations fold the sum to four).
+
+| step, per block | instructions |
+| --- | --- |
+| the bytes | a `vloadunpacklps`/`hps` `{uint8}` pair at `18 i + 2` |
+| the scale | `vbroadcastss [18 i]{float16}` (`mvex.inc`, new with this kernel) |
+| `hi` | `vmulps` by 2^-4, `vrndfxpntps` round down |
+| `b x0 + hi y - p` | `vmulps [x0]`, `vfmadd231ps [y]`, `vsubps [p]{4to16}` |
+| times the scale | `vfmadd231ps acc, t, d`, four accumulators in turn |
+
+Nine a block, 72 a superblock, with six prefetches; the kernel takes a
+whole row (the accumulators stay in registers, the row is one
+sequential stream: three lines 576 bytes ahead to the first-level
+cache through a pointer that takes the caller's jump when four
+superblocks are left, so the last four prefetches of a call fetch the
+next call's first four; three lines 2304 ahead to the second). The weights are not the
+reference's bit for bit any more (the sums associate differently); the
+check against the host reference passes as before.
+
+Measured on card 0 (a 7120A) with `tools/q4_0-bench.S` and
+`tools/q4_0-stream.S` (their documents have the commands):
+
+| | `phi_q4_0_1` | `phi_q4_0_row1p` |
+| --- | --- | --- |
+| cycles a superblock, one thread, everything in the first-level cache | 306, 306 | 204, 204 |
+| the same streaming 64 MiB of weights, prefetch as built | | 202.2, 203.6 |
+| with no prefetch (the core's own streamer) | | 248.6, 249.9 |
+| with only the second-level prefetch | | 245.7, 247.1 |
+| 40 such streams at once, one a core, the median | | 201.3, 200.5 |
+| two a core, each with a prepared row of its own | | 560.5, 560.5 |
+
+The last row is why a core's threads share one prepared row
+(`rows.md`): 46080 bytes of activations do not fit a 32 KiB cache.
+
+Any eight vector operations of these kernels cost 24 cycles on a lone
+thread, 11 of that the call: no instruction in them is slow, and a lone
+thread issues one every other cycle. In the service
+(`matmul-check --only q4_0 --act 1 --repeat 15`, the two workers
+deployed in turn, twice, 114 slices, the card's compute time, one row):
+
+| shape | before | after |
+| --- | --- | --- |
+| 17408 x 5120 | 1.058, 1.062 ms | 0.891, 0.681 ms |
+| 5120 x 5120 | 0.372, 0.383 ms | 0.238, 0.229 ms |
+| 5120 x 17408 (then on `phi_q4_0_1`; in half segments since, `rows.md`: 1.043, 1.026, 1.037 against 0.889, 0.866 ms at 120 slices) | 1.058, 1.091 ms | 1.079, 1.187 ms |
+| 1024 x 5120 (not taken: nine rows a slice) | 0.082, 0.081 ms | 0.089, 0.082 ms |
 
 Two facts about the unpack loads that `phi_probe` settled against the
 card: the unprefixed D0/D4 pair converts into int32 lanes and D1/D5 into
