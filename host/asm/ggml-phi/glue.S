@@ -35,6 +35,41 @@
 	.set AH_COPY_MAX, 1048576
 	.set AH_DRAIN_MAX, 8388608
 
+# The timeline (PHI_GGML_TIME, glue.md): where a generation's time goes,
+# seen from this backend. TM adds the time since the last mark to a slot
+# and keeps every register; it sits right after a call or before one,
+# where no flag is live.
+	.set TM_OUT, 0				# outside the backend: the scheduler, the other backends, the copies between them
+	.set TM_ISSUE, 1			# a request begun: the activations to the window, the descriptor, the doorbell
+	.set TM_HOST, 2				# the host's rows
+	.set TM_END, 3				# the wait for the cards, their rows gathered
+	.set TM_REST, 4				# the rest inside: the scan, a drain, the bookkeeping
+	.set TM_LONG, 5				# outside gaps over TM_LONG_NS: between requests, a prompt on a GPU
+	.set TM_AHEAD, 6			# a multiply issued ahead: its activations kept, the request begun
+	.set TM_SLOTS, 8
+	.set TM_LONG_NS, 20000000
+	.set TM_EVERY, 8192			# sub-graphs between two lines
+
+	.macro TM slot
+	cmpl $0, time_on(%rip)
+	jle .Ltm\@
+	pushq $\slot
+	call tm_mark
+.Ltm\@:
+	.endm
+
+# TM_SAY str, slot: the words, then the slot in microseconds.
+	.macro TM_SAY str, slot
+	leaq \str(%rip), %rsi
+	call w_str
+	movq tm_acc + 8 * \slot(%rip), %rax
+	xorl %edx, %edx
+	movl $1000, %ecx
+	divq %rcx
+	movq %rax, %rdi
+	call w_dec
+	.endm
+
 	.bss
 	.balign 64
 g_cpu:	.skip 8				# the private CPU backend
@@ -56,6 +91,10 @@ ah_nr:	.skip 8				# its host ranges
 ah_bytes:	.skip 8			# of the activations kept in ah_copy
 ah_taken:	.skip 8			# multiplies that were with the cards before their node
 ah_dropped:	.skip 8			# begun ahead, and not what came
+tm_prev:	.skip 8			# the last mark, ns
+tm_graphs:	.skip 8			# sub-graphs computed
+tm_acc:		.skip 8 * TM_SLOTS	# ns by slot
+time_on:	.skip 4			# PHI_GGML_TIME: -1 unasked, 0, 1
 	.balign 64
 phi_reg:	.skip REG_BYTES
 	.balign 64
@@ -108,6 +147,15 @@ s_ahead_off:	.asciz "PHI_GGML_AHEAD needs PHI_GGML_OFFLOAD (without it a multipl
 s_ah1:	.asciz "ahead: "
 s_ah2:	.asciz " multiplies were with the cards before their node arrived, "
 s_ah3:	.asciz " begun ahead were not what came"
+e_time:	.asciz "PHI_GGML_TIME"
+s_tm0:	.asciz "time: "
+s_tm1:	.asciz " sub-graphs; us outside "
+s_tm2:	.asciz ", issue "
+s_tm3:	.asciz ", host rows "
+s_tm4:	.asciz ", end "
+s_tm5:	.asciz ", rest "
+s_tm6:	.asciz ", issued ahead "
+s_tm7:	.asciz "; outside gaps over 20 ms "
 s_no_cpu:	.asciz "no CPU device registered"
 s_no_cpu_init:	.asciz "the CPU backend would not initialise"
 s_pool1:	.asciz "the host's rows have a threadpool of their own (poll "
@@ -1768,6 +1816,90 @@ ahead_enabled:
 9:	movl ahead_on(%rip), %eax
 	ret
 
+# time_enabled: PHI_GGML_TIME=1 (asked once); eax.
+time_enabled:
+	cmpl $-1, time_on(%rip)
+	jne 9f
+	leaq e_time(%rip), %rdi
+	xorl %esi, %esi
+	call env_u64
+	testl %eax, %eax
+	setnz %al
+	movzbl %al, %eax
+	movl %eax, time_on(%rip)
+9:	movl time_on(%rip), %eax
+	ret
+
+# tm_mark: the time since the last mark added to the slot pushed by the
+# caller (TM), which this removes. Keeps every register.
+tm_mark:
+	pushq %rax
+	pushq %rcx
+	pushq %rdx
+	pushq %rsi
+	pushq %rdi
+	pushq %r11
+	call now_ns
+	movq %rax, %rcx
+	subq tm_prev(%rip), %rcx
+	movq %rax, tm_prev(%rip)
+	movq 56(%rsp), %rdx			# the slot: past six registers and the return address
+	leaq tm_acc(%rip), %rsi
+	addq %rcx, (%rsi,%rdx,8)
+	popq %r11
+	popq %rdi
+	popq %rsi
+	popq %rdx
+	popq %rcx
+	popq %rax
+	ret $8
+
+# tm_enter: a sub-graph arrives: the time since the last one left is the
+# outside's, or a long gap's. Clobbers rax, rcx, rdx, rsi, rdi, r11.
+tm_enter:
+	call time_enabled
+	testl %eax, %eax
+	jz 9f
+	call now_ns
+	movq %rax, %rcx
+	subq tm_prev(%rip), %rcx
+	movq %rax, tm_prev(%rip)
+	movl $TM_OUT, %edx
+	cmpq $TM_LONG_NS, %rcx
+	jbe 1f
+	movl $TM_LONG, %edx
+1:	leaq tm_acc(%rip), %rsi
+	addq %rcx, (%rsi,%rdx,8)
+9:	ret
+
+# tm_leave: a sub-graph is done: the rest inside closed, and a line every
+# TM_EVERY sub-graphs (the sums since the start, in microseconds). Keeps
+# rax.
+tm_leave:
+	cmpl $0, time_on(%rip)
+	jle 9f
+	pushq %rax
+	TM TM_REST
+	incq tm_graphs(%rip)
+	movq tm_graphs(%rip), %rax
+	testq $TM_EVERY - 1, %rax
+	jnz 8f
+	call say_begin
+	leaq s_tm0(%rip), %rsi
+	call w_str
+	movq tm_graphs(%rip), %rdi
+	call w_dec
+	TM_SAY s_tm1, TM_OUT
+	TM_SAY s_tm2, TM_ISSUE
+	TM_SAY s_tm3, TM_HOST
+	TM_SAY s_tm4, TM_END
+	TM_SAY s_tm5, TM_REST
+	TM_SAY s_tm6, TM_AHEAD
+	TM_SAY s_tm7, TM_LONG
+	call l_end
+8:	popq %rax
+9:	ret
+
 # ah_slot(rdi weight): its entry of ah_succ in rax: the one that has it
 # for a key, else the first empty one of eight from its place, else its
 # place (to be overwritten). Clobbers rcx, rdx, rsi, r8.
@@ -1935,7 +2067,9 @@ run_mul_mat:
 	movq %rax, 8(%rsp)
 	movq T_NB+8(%r13), %rax
 	movq %rax, 16(%rsp)
+	TM 4
 	call phi_ggml_begin
+	TM 1
 	addq $32, %rsp
 	testq %rax, %rax
 	js 9f
@@ -1961,7 +2095,9 @@ run_mul_mat:
 	jmp 1b
 3:	movq T_DATA(%rbx), %rdi
 	movq T_NB+8(%rbx), %rsi
+	TM 2
 	call phi_ggml_end
+	TM 3
 	testl %eax, %eax
 	jnz 9f
 	call ahead_enabled
@@ -2007,6 +2143,7 @@ run_mul_mat:
 	movq T_NB+8(%r13), %rax
 	movq %rax, 16(%rsp)
 	call phi_ggml_begin
+	TM 6
 	addq $32, %rsp
 	testq %rax, %rax
 	js 30f					# refused: nothing is with the cards
@@ -2364,7 +2501,9 @@ run_id_pair:
 	movl -64(%rbp), %ecx
 	movq T_NE+8(%r13), %r8
 	movq T_NE(%r13), %r9
+	TM 4
 	call phi_ggml_begin_id_pair
+	TM 1
 	addq $112, %rsp
 	cmpq $-2, %rax
 	je 8f
@@ -2409,6 +2548,7 @@ run_id_pair:
 	leaq which(%rip), %rdx
 	movl -76(%rbp), %ecx
 	call host_rows_id_pair
+	TM 2
 	testl %eax, %eax
 	jnz 9f
 	movq T_DATA(%rbx), %rdi
@@ -2418,6 +2558,7 @@ run_id_pair:
 	movq T_NB+8(%r12), %r8
 	movq T_NB+16(%r12), %r9
 	call phi_ggml_end_id_pair
+	TM 3
 	testl %eax, %eax
 	jnz 9f
 	xorl %eax, %eax
@@ -2489,7 +2630,9 @@ run_mul_mat_id:
 	movq T_NE(%r12), %rcx
 	movq T_NB+8(%r12), %r8
 	movl -48(%rbp), %r9d
+	TM 4
 	call phi_ggml_begin_id
+	TM 1
 	addq $96, %rsp
 	testq %rax, %rax
 	js 9f
@@ -2516,7 +2659,9 @@ run_mul_mat_id:
 3:	movq T_DATA(%rbx), %rdi
 	movq T_NB+8(%rbx), %rsi
 	movq T_NB+16(%rbx), %rdx
+	TM 2
 	call phi_ggml_end_id
+	TM 3
 	testl %eax, %eax
 	jnz 9f
 	xorl %eax, %eax
@@ -2622,6 +2767,7 @@ phi_graph_compute:
 	pushq %r15
 	subq $40, %rsp
 	movq %rsi, %rbx				# graph
+	call tm_enter
 	movq %rbx, %rdi
 	call dump_graph
 	movl CG_N_NODES(%rbx), %r12d
@@ -2740,7 +2886,8 @@ phi_graph_compute:
 91:	movl $GGML_STATUS_ALLOC_FAILED, %eax
 	jmp 99f
 92:	movl $GGML_STATUS_FAILED, %eax
-99:	leaq -40(%rbp), %rsp
+99:	call tm_leave
+	leaq -40(%rbp), %rsp
 	popq %r15
 	popq %r14
 	popq %r13
@@ -2993,6 +3140,7 @@ ggml_backend_phi_reg:
 	movl $-1, graph_left(%rip)
 	movl $-1, verbose_on(%rip)
 	movl $-1, ahead_on(%rip)
+	movl $-1, time_on(%rip)
 1:	call tables_init
 	leaq phi_reg(%rip), %rbx
 	movl $GGML_BACKEND_API_VERSION, REG_API_VERSION(%rbx)

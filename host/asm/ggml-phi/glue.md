@@ -153,6 +153,54 @@ time unchanged: the time between its multiplies is what shrank, about
 the count was last said. The two sets were not interleaved, and their
 ranges touch (24.791 and 24.802 s).
 
+## The timeline (`PHI_GGML_TIME`, 2026-11-10)
+
+`PHI_GGML_TIME=1` has the backend account for a generation's time as it
+sees it. `TM slot` (a macro: the slot pushed, `tm_mark` called, every
+register kept) adds the time since the last mark to a slot; the marks
+sit right after a call or before one, where no flag is live:
+
+| slot | what it is |
+| --- | --- |
+| outside | between two sub-graphs: ggml's scheduler, the other backends' sub-graphs (a GPU's), the copies between backends; `tm_enter`, at `phi_graph_compute`'s entry |
+| issue | `phi_ggml_begin`, `_begin_id`, `_begin_id_pair`: the activations to the window, the descriptor, the doorbell (and, at a tensor's first multiply, its upload) |
+| host rows | the host's ranges on the private CPU backend |
+| end | `phi_ggml_end` and its kin: the wait for the cards after the host's rows are done, their rows gathered |
+| rest | the scan of the graph, a drain, the bookkeeping; closed by `tm_leave` at the exit |
+| issued ahead | the activations kept and the request begun for a multiply issued ahead of its node |
+| long gaps | an outside gap of more than 20 ms (between requests, a prompt on a GPU), kept apart so it does not drown the rest |
+
+`tm_leave` prints one line every 8192 sub-graphs, the sums since the
+start in microseconds (`time: N sub-graphs; us outside X, issue X, host
+rows X, end X, rest X, issued ahead X; outside gaps over 20 ms X`); the
+difference of two lines is an interval. Off, a mark is one compare and
+a jump.
+
+Measured on a 35 B Q6_K mixture-of-experts model, card 0 (a 7120A)
+holding every dense row and 109 whole experts of each layer's 256
+(`PHI_GGML_EXPERTS`, 12.92 GB), a GPU holding the context, the
+run-ahead on; 24,576 sub-graphs of generation, 0.641 ms each:
+
+| slot | share |
+| --- | --- |
+| end | 52.6 % |
+| outside | 28.0 % |
+| host rows | 18.8 % |
+| issue | 0.33 % |
+| rest, issued ahead | 0.18 %, 0.04 % |
+
+With the marks in and the switch on, the temperature-0 output of that
+server is the plain one's byte for byte (24 tokens with their top-5
+log-probabilities). What the table says: the copies of the activations
+are not where the time goes; in that layout the host waits for the card
+half the time, and a quarter is spent outside the backend.
+
+The run-ahead on that model and layout, 220 tokens, three prompts: 7.529,
+7.842, 7.498 tok/s in graph order, 8.230, 8.280, 8.729 with
+`PHI_GGML_AHEAD=1`, the output identical; the card busy 60.3 % of the
+time before and 71.0 % after (sampled from the host); 16,384 multiplies
+taken ahead, 81 begun ahead that were not what came.
+
 ## The host's rows
 
 `host_backend` creates the private CPU backend once: `ggml_backend_dev_by_type(CPU)`,

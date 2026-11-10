@@ -59,6 +59,9 @@ that followed its weight last time is begun at once if it reads the same
 activations, so the cards work while the host and a GPU handle the
 result before; a guess that is wrong is dropped and costs no result:
 `host/asm/ggml-phi/glue.md`),
+`PHI_GGML_TIME` (1: the backend accounts for a generation's time by
+phase, a line every 8192 sub-graphs: outside the backend, issuing, the
+host's rows, the wait for the cards; `host/asm/ggml-phi/glue.md`),
 `PHI_GGML_JUDGE` (0: no tensor is moved by its timings; with
 `PHI_GGML_PP_ADAPT=0` the same request gives the same output),
 `PHI_GGML_HOST_THREADS` (the host's threads for its rows, 12: leave the
