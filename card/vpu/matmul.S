@@ -30,7 +30,8 @@
 g_consts:
 	.float 16.0, 4.0, 2.0
 	.float 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625, 0.0078125, 0.00390625
-	.fill 5, 4, 0
+	.float 8.0							# 44: Q4_0's q - 8
+	.fill 4, 4, 0
 	.float -127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113
 	.long 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7		# 128: expand
 	.long 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15	# 192: expand_hi
@@ -59,6 +60,7 @@ g_fmt:
 	.quad 272, phi_q8_0_1, phi_q8_0_4, phi_q8_0_8, phi_q8_0_1h, phi_q8_0_4h, phi_q8_0_8h, 0
 	.quad 136, phi_iq4xs_1, phi_iq4xs_4, phi_iq4xs_8, phi_iq4xs_1h, phi_iq4xs_4h, phi_iq4xs_8h, 0
 	.quad 0, 0, 0, 0, 0, 0, 0, 0		# bfloat16: a float type, the dot kernels
+	.quad 144, phi_q4_0_1, phi_q4_0_4, phi_q4_0_8, phi_q4_0_1h, phi_q4_0_4h, phi_q4_0_8h, 0	# eight 18-byte blocks
 	.globl g_fmt
 
 	.bss

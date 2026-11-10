@@ -127,6 +127,7 @@ static const struct entry table[] = {
     { "GGML_BACKEND_API_VERSION", GGML_BACKEND_API_VERSION },
     { "GGML_TYPE_F32", GGML_TYPE_F32 },
     { "GGML_TYPE_F16", GGML_TYPE_F16 },
+    { "GGML_TYPE_Q4_0", GGML_TYPE_Q4_0 },
     { "GGML_TYPE_Q8_0", GGML_TYPE_Q8_0 },
     { "GGML_TYPE_Q4_K", GGML_TYPE_Q4_K },
     { "GGML_TYPE_Q5_K", GGML_TYPE_Q5_K },

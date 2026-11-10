@@ -7336,3 +7336,1266 @@ phi_bench:
     ret
     .size phi_bench, .-phi_bench
 
+# The Q4_0 kernels (2026-11-09): the output of tools/q4_0-kernels.c.
+# A block is 18 bytes, the float16 scale d and sixteen bytes whose low
+# nibbles are weights 0..15 and whose high nibbles are weights 16..31, each
+# (q - 8) * d (ggml's dequantize_row_q4_0); eight blocks a call.
+# phi_q4_0_1: eight Q4_0 blocks, against 1 activation row(s)
+    .globl phi_q4_0_1
+    .type phi_q4_0_1, @function
+phi_q4_0_1:
+    mov 8(%rsp), %r11
+    lea (%rdi,%r11,2), %rax
+	VPREFETCH0 rax, 0	# vprefetch0 [rax+0]
+	VPREFETCH0 rax, 64	# vprefetch0 [rax+64]
+	VPREFETCH0 rax, 128	# vprefetch0 [rax+128]
+	VPREFETCH0 rax, 192	# vprefetch0 [rax+192]
+    lea (%rax,%r11,2), %rax
+	VPREFETCH1 rax, 0	# vprefetch1 [rax+0]
+	VPREFETCH1 rax, 64	# vprefetch1 [rax+64]
+	VPREFETCH1 rax, 128	# vprefetch1 [rax+128]
+	VPREFETCH1 rax, 192	# vprefetch1 [rax+192]
+	VPXORD zmm16, zmm16, zmm16	# vpxord zmm16, zmm16, zmm16
+    mov $1, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 0, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+0]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 64, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+64]{float16}
+    mov $2, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 18, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+18]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 82, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+82]{float16}
+    mov $4, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 36, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+36]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 100, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+100]{float16}
+    mov $8, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 54, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+54]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 118, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+118]{float16}
+    mov $16, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 72, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+72]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 136, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+136]{float16}
+    mov $32, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 90, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+90]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 154, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+154]{float16}
+    mov $64, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 108, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+108]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 172, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+172]{float16}
+    mov $128, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 126, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+126]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 190, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+190]{float16}
+	VMOVAPS_ST rcx, 0, zmm16	# vmovaps [rcx+0], zmm16
+	VMOVAPS zmm0, r8, 0	# vmovaps zmm0, [r8+0]
+	VPXORD zmm1, zmm1, zmm1	# vpxord zmm1, zmm1, zmm1
+	VPXORD zmm2, zmm2, zmm2	# vpxord zmm2, zmm2, zmm2
+	VPXORD zmm3, zmm3, zmm3	# vpxord zmm3, zmm3, zmm3
+	VLOADUNPACKLPS zmm8, rdi, 2, conv=CV_U8	# vloadunpacklps zmm8, [rdi+2]{uint8}
+	VLOADUNPACKHPS zmm8, rdi, 66, conv=CV_U8	# vloadunpackhps zmm8, [rdi+66]{uint8}
+	VLOADUNPACKLPS zmm9, rdi, 20, conv=CV_U8	# vloadunpacklps zmm9, [rdi+20]{uint8}
+	VLOADUNPACKHPS zmm9, rdi, 84, conv=CV_U8	# vloadunpackhps zmm9, [rdi+84]{uint8}
+	VLOADUNPACKLPS zmm10, rdi, 38, conv=CV_U8	# vloadunpacklps zmm10, [rdi+38]{uint8}
+	VLOADUNPACKHPS zmm10, rdi, 102, conv=CV_U8	# vloadunpackhps zmm10, [rdi+102]{uint8}
+	VLOADUNPACKLPS zmm11, rdi, 56, conv=CV_U8	# vloadunpacklps zmm11, [rdi+56]{uint8}
+	VLOADUNPACKHPS zmm11, rdi, 120, conv=CV_U8	# vloadunpackhps zmm11, [rdi+120]{uint8}
+	VMULPS zmm12, zmm8, r9, 24, conv=CV_1TO16	# vmulps zmm12, zmm8, [r9+24]{1to16}
+	VMULPS zmm13, zmm9, r9, 24, conv=CV_1TO16	# vmulps zmm13, zmm9, [r9+24]{1to16}
+	VMULPS zmm14, zmm10, r9, 24, conv=CV_1TO16	# vmulps zmm14, zmm10, [r9+24]{1to16}
+	VMULPS zmm15, zmm11, r9, 24, conv=CV_1TO16	# vmulps zmm15, zmm11, [r9+24]{1to16}
+	VRNDFXPNTPS zmm12, zmm12, 1	# vrndfxpntps zmm12, zmm12, 1
+	VRNDFXPNTPS zmm13, zmm13, 1	# vrndfxpntps zmm13, zmm13, 1
+	VRNDFXPNTPS zmm14, zmm14, 1	# vrndfxpntps zmm14, zmm14, 1
+	VRNDFXPNTPS zmm15, zmm15, 1	# vrndfxpntps zmm15, zmm15, 1
+	VFNMADD231PS zmm8, zmm12, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm8, zmm12, [r9+0]{1to16}
+	VFNMADD231PS zmm9, zmm13, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm9, zmm13, [r9+0]{1to16}
+	VFNMADD231PS zmm10, zmm14, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm10, zmm14, [r9+0]{1to16}
+	VFNMADD231PS zmm11, zmm15, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm11, zmm15, [r9+0]{1to16}
+	VSUBPS zmm8, zmm8, r9, 44, conv=CV_1TO16	# vsubps zmm8, zmm8, [r9+44]{1to16}
+	VSUBPS zmm9, zmm9, r9, 44, conv=CV_1TO16	# vsubps zmm9, zmm9, [r9+44]{1to16}
+	VSUBPS zmm10, zmm10, r9, 44, conv=CV_1TO16	# vsubps zmm10, zmm10, [r9+44]{1to16}
+	VSUBPS zmm11, zmm11, r9, 44, conv=CV_1TO16	# vsubps zmm11, zmm11, [r9+44]{1to16}
+	VSUBPS zmm12, zmm12, r9, 44, conv=CV_1TO16	# vsubps zmm12, zmm12, [r9+44]{1to16}
+	VSUBPS zmm13, zmm13, r9, 44, conv=CV_1TO16	# vsubps zmm13, zmm13, [r9+44]{1to16}
+	VSUBPS zmm14, zmm14, r9, 44, conv=CV_1TO16	# vsubps zmm14, zmm14, [r9+44]{1to16}
+	VSUBPS zmm15, zmm15, r9, 44, conv=CV_1TO16	# vsubps zmm15, zmm15, [r9+44]{1to16}
+	VMULPS zmm8, zmm8, rcx, 0, conv=CV_1TO16	# vmulps zmm8, zmm8, [rcx+0]{1to16}
+	VMULPS zmm9, zmm9, rcx, 4, conv=CV_1TO16	# vmulps zmm9, zmm9, [rcx+4]{1to16}
+	VMULPS zmm10, zmm10, rcx, 8, conv=CV_1TO16	# vmulps zmm10, zmm10, [rcx+8]{1to16}
+	VMULPS zmm11, zmm11, rcx, 12, conv=CV_1TO16	# vmulps zmm11, zmm11, [rcx+12]{1to16}
+	VMULPS zmm12, zmm12, rcx, 0, conv=CV_1TO16	# vmulps zmm12, zmm12, [rcx+0]{1to16}
+	VMULPS zmm13, zmm13, rcx, 4, conv=CV_1TO16	# vmulps zmm13, zmm13, [rcx+4]{1to16}
+	VMULPS zmm14, zmm14, rcx, 8, conv=CV_1TO16	# vmulps zmm14, zmm14, [rcx+8]{1to16}
+	VMULPS zmm15, zmm15, rcx, 12, conv=CV_1TO16	# vmulps zmm15, zmm15, [rcx+12]{1to16}
+	VFMADD231PS zmm0, zmm8, rsi, 0	# vfmadd231ps zmm0, zmm8, [rsi+0]
+	VFMADD231PS zmm1, zmm12, rsi, 64	# vfmadd231ps zmm1, zmm12, [rsi+64]
+	VFMADD231PS zmm2, zmm9, rsi, 128	# vfmadd231ps zmm2, zmm9, [rsi+128]
+	VFMADD231PS zmm3, zmm13, rsi, 192	# vfmadd231ps zmm3, zmm13, [rsi+192]
+	VFMADD231PS zmm0, zmm10, rsi, 256	# vfmadd231ps zmm0, zmm10, [rsi+256]
+	VFMADD231PS zmm1, zmm14, rsi, 320	# vfmadd231ps zmm1, zmm14, [rsi+320]
+	VFMADD231PS zmm2, zmm11, rsi, 384	# vfmadd231ps zmm2, zmm11, [rsi+384]
+	VFMADD231PS zmm3, zmm15, rsi, 448	# vfmadd231ps zmm3, zmm15, [rsi+448]
+	VLOADUNPACKLPS zmm8, rdi, 74, conv=CV_U8	# vloadunpacklps zmm8, [rdi+74]{uint8}
+	VLOADUNPACKHPS zmm8, rdi, 138, conv=CV_U8	# vloadunpackhps zmm8, [rdi+138]{uint8}
+	VLOADUNPACKLPS zmm9, rdi, 92, conv=CV_U8	# vloadunpacklps zmm9, [rdi+92]{uint8}
+	VLOADUNPACKHPS zmm9, rdi, 156, conv=CV_U8	# vloadunpackhps zmm9, [rdi+156]{uint8}
+	VLOADUNPACKLPS zmm10, rdi, 110, conv=CV_U8	# vloadunpacklps zmm10, [rdi+110]{uint8}
+	VLOADUNPACKHPS zmm10, rdi, 174, conv=CV_U8	# vloadunpackhps zmm10, [rdi+174]{uint8}
+	VLOADUNPACKLPS zmm11, rdi, 128, conv=CV_U8	# vloadunpacklps zmm11, [rdi+128]{uint8}
+	VLOADUNPACKHPS zmm11, rdi, 192, conv=CV_U8	# vloadunpackhps zmm11, [rdi+192]{uint8}
+	VMULPS zmm12, zmm8, r9, 24, conv=CV_1TO16	# vmulps zmm12, zmm8, [r9+24]{1to16}
+	VMULPS zmm13, zmm9, r9, 24, conv=CV_1TO16	# vmulps zmm13, zmm9, [r9+24]{1to16}
+	VMULPS zmm14, zmm10, r9, 24, conv=CV_1TO16	# vmulps zmm14, zmm10, [r9+24]{1to16}
+	VMULPS zmm15, zmm11, r9, 24, conv=CV_1TO16	# vmulps zmm15, zmm11, [r9+24]{1to16}
+	VRNDFXPNTPS zmm12, zmm12, 1	# vrndfxpntps zmm12, zmm12, 1
+	VRNDFXPNTPS zmm13, zmm13, 1	# vrndfxpntps zmm13, zmm13, 1
+	VRNDFXPNTPS zmm14, zmm14, 1	# vrndfxpntps zmm14, zmm14, 1
+	VRNDFXPNTPS zmm15, zmm15, 1	# vrndfxpntps zmm15, zmm15, 1
+	VFNMADD231PS zmm8, zmm12, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm8, zmm12, [r9+0]{1to16}
+	VFNMADD231PS zmm9, zmm13, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm9, zmm13, [r9+0]{1to16}
+	VFNMADD231PS zmm10, zmm14, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm10, zmm14, [r9+0]{1to16}
+	VFNMADD231PS zmm11, zmm15, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm11, zmm15, [r9+0]{1to16}
+	VSUBPS zmm8, zmm8, r9, 44, conv=CV_1TO16	# vsubps zmm8, zmm8, [r9+44]{1to16}
+	VSUBPS zmm9, zmm9, r9, 44, conv=CV_1TO16	# vsubps zmm9, zmm9, [r9+44]{1to16}
+	VSUBPS zmm10, zmm10, r9, 44, conv=CV_1TO16	# vsubps zmm10, zmm10, [r9+44]{1to16}
+	VSUBPS zmm11, zmm11, r9, 44, conv=CV_1TO16	# vsubps zmm11, zmm11, [r9+44]{1to16}
+	VSUBPS zmm12, zmm12, r9, 44, conv=CV_1TO16	# vsubps zmm12, zmm12, [r9+44]{1to16}
+	VSUBPS zmm13, zmm13, r9, 44, conv=CV_1TO16	# vsubps zmm13, zmm13, [r9+44]{1to16}
+	VSUBPS zmm14, zmm14, r9, 44, conv=CV_1TO16	# vsubps zmm14, zmm14, [r9+44]{1to16}
+	VSUBPS zmm15, zmm15, r9, 44, conv=CV_1TO16	# vsubps zmm15, zmm15, [r9+44]{1to16}
+	VMULPS zmm8, zmm8, rcx, 16, conv=CV_1TO16	# vmulps zmm8, zmm8, [rcx+16]{1to16}
+	VMULPS zmm9, zmm9, rcx, 20, conv=CV_1TO16	# vmulps zmm9, zmm9, [rcx+20]{1to16}
+	VMULPS zmm10, zmm10, rcx, 24, conv=CV_1TO16	# vmulps zmm10, zmm10, [rcx+24]{1to16}
+	VMULPS zmm11, zmm11, rcx, 28, conv=CV_1TO16	# vmulps zmm11, zmm11, [rcx+28]{1to16}
+	VMULPS zmm12, zmm12, rcx, 16, conv=CV_1TO16	# vmulps zmm12, zmm12, [rcx+16]{1to16}
+	VMULPS zmm13, zmm13, rcx, 20, conv=CV_1TO16	# vmulps zmm13, zmm13, [rcx+20]{1to16}
+	VMULPS zmm14, zmm14, rcx, 24, conv=CV_1TO16	# vmulps zmm14, zmm14, [rcx+24]{1to16}
+	VMULPS zmm15, zmm15, rcx, 28, conv=CV_1TO16	# vmulps zmm15, zmm15, [rcx+28]{1to16}
+	VFMADD231PS zmm0, zmm8, rsi, 512	# vfmadd231ps zmm0, zmm8, [rsi+512]
+	VFMADD231PS zmm1, zmm12, rsi, 576	# vfmadd231ps zmm1, zmm12, [rsi+576]
+	VFMADD231PS zmm2, zmm9, rsi, 640	# vfmadd231ps zmm2, zmm9, [rsi+640]
+	VFMADD231PS zmm3, zmm13, rsi, 704	# vfmadd231ps zmm3, zmm13, [rsi+704]
+	VFMADD231PS zmm0, zmm10, rsi, 768	# vfmadd231ps zmm0, zmm10, [rsi+768]
+	VFMADD231PS zmm1, zmm14, rsi, 832	# vfmadd231ps zmm1, zmm14, [rsi+832]
+	VFMADD231PS zmm2, zmm11, rsi, 896	# vfmadd231ps zmm2, zmm11, [rsi+896]
+	VFMADD231PS zmm3, zmm15, rsi, 960	# vfmadd231ps zmm3, zmm15, [rsi+960]
+	VADDPS zmm0, zmm0, zmm1	# vaddps zmm0, zmm0, zmm1
+	VADDPS zmm2, zmm2, zmm3	# vaddps zmm2, zmm2, zmm3
+	VADDPS zmm0, zmm0, zmm2	# vaddps zmm0, zmm0, zmm2
+	VMOVAPS_ST r8, 0, zmm0	# vmovaps [r8+0], zmm0
+    ret
+    .size phi_q4_0_1, .-phi_q4_0_1
+
+# phi_q4_0_4: eight Q4_0 blocks, against 4 activation row(s)
+    .globl phi_q4_0_4
+    .type phi_q4_0_4, @function
+phi_q4_0_4:
+    mov 8(%rsp), %r11
+    lea (%rdi,%r11,2), %rax
+	VPREFETCH0 rax, 0	# vprefetch0 [rax+0]
+	VPREFETCH0 rax, 64	# vprefetch0 [rax+64]
+	VPREFETCH0 rax, 128	# vprefetch0 [rax+128]
+	VPREFETCH0 rax, 192	# vprefetch0 [rax+192]
+    lea (%rax,%r11,2), %rax
+	VPREFETCH1 rax, 0	# vprefetch1 [rax+0]
+	VPREFETCH1 rax, 64	# vprefetch1 [rax+64]
+	VPREFETCH1 rax, 128	# vprefetch1 [rax+128]
+	VPREFETCH1 rax, 192	# vprefetch1 [rax+192]
+	VPXORD zmm16, zmm16, zmm16	# vpxord zmm16, zmm16, zmm16
+    mov $1, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 0, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+0]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 64, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+64]{float16}
+    mov $2, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 18, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+18]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 82, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+82]{float16}
+    mov $4, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 36, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+36]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 100, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+100]{float16}
+    mov $8, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 54, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+54]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 118, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+118]{float16}
+    mov $16, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 72, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+72]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 136, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+136]{float16}
+    mov $32, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 90, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+90]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 154, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+154]{float16}
+    mov $64, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 108, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+108]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 172, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+172]{float16}
+    mov $128, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 126, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+126]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 190, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+190]{float16}
+	VMOVAPS_ST rcx, 0, zmm16	# vmovaps [rcx+0], zmm16
+    mov 8(%rdx), %r10
+    mov 16(%rdx), %r11
+    mov 24(%rdx), %rax
+	VMOVAPS zmm0, r8, 0	# vmovaps zmm0, [r8+0]
+	VMOVAPS zmm1, r8, 64	# vmovaps zmm1, [r8+64]
+	VMOVAPS zmm2, r8, 128	# vmovaps zmm2, [r8+128]
+	VMOVAPS zmm3, r8, 192	# vmovaps zmm3, [r8+192]
+	VLOADUNPACKLPS zmm8, rdi, 2, conv=CV_U8	# vloadunpacklps zmm8, [rdi+2]{uint8}
+	VLOADUNPACKHPS zmm8, rdi, 66, conv=CV_U8	# vloadunpackhps zmm8, [rdi+66]{uint8}
+	VLOADUNPACKLPS zmm9, rdi, 20, conv=CV_U8	# vloadunpacklps zmm9, [rdi+20]{uint8}
+	VLOADUNPACKHPS zmm9, rdi, 84, conv=CV_U8	# vloadunpackhps zmm9, [rdi+84]{uint8}
+	VLOADUNPACKLPS zmm10, rdi, 38, conv=CV_U8	# vloadunpacklps zmm10, [rdi+38]{uint8}
+	VLOADUNPACKHPS zmm10, rdi, 102, conv=CV_U8	# vloadunpackhps zmm10, [rdi+102]{uint8}
+	VLOADUNPACKLPS zmm11, rdi, 56, conv=CV_U8	# vloadunpacklps zmm11, [rdi+56]{uint8}
+	VLOADUNPACKHPS zmm11, rdi, 120, conv=CV_U8	# vloadunpackhps zmm11, [rdi+120]{uint8}
+	VMULPS zmm12, zmm8, r9, 24, conv=CV_1TO16	# vmulps zmm12, zmm8, [r9+24]{1to16}
+	VMULPS zmm13, zmm9, r9, 24, conv=CV_1TO16	# vmulps zmm13, zmm9, [r9+24]{1to16}
+	VMULPS zmm14, zmm10, r9, 24, conv=CV_1TO16	# vmulps zmm14, zmm10, [r9+24]{1to16}
+	VMULPS zmm15, zmm11, r9, 24, conv=CV_1TO16	# vmulps zmm15, zmm11, [r9+24]{1to16}
+	VRNDFXPNTPS zmm12, zmm12, 1	# vrndfxpntps zmm12, zmm12, 1
+	VRNDFXPNTPS zmm13, zmm13, 1	# vrndfxpntps zmm13, zmm13, 1
+	VRNDFXPNTPS zmm14, zmm14, 1	# vrndfxpntps zmm14, zmm14, 1
+	VRNDFXPNTPS zmm15, zmm15, 1	# vrndfxpntps zmm15, zmm15, 1
+	VFNMADD231PS zmm8, zmm12, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm8, zmm12, [r9+0]{1to16}
+	VFNMADD231PS zmm9, zmm13, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm9, zmm13, [r9+0]{1to16}
+	VFNMADD231PS zmm10, zmm14, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm10, zmm14, [r9+0]{1to16}
+	VFNMADD231PS zmm11, zmm15, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm11, zmm15, [r9+0]{1to16}
+	VSUBPS zmm8, zmm8, r9, 44, conv=CV_1TO16	# vsubps zmm8, zmm8, [r9+44]{1to16}
+	VSUBPS zmm9, zmm9, r9, 44, conv=CV_1TO16	# vsubps zmm9, zmm9, [r9+44]{1to16}
+	VSUBPS zmm10, zmm10, r9, 44, conv=CV_1TO16	# vsubps zmm10, zmm10, [r9+44]{1to16}
+	VSUBPS zmm11, zmm11, r9, 44, conv=CV_1TO16	# vsubps zmm11, zmm11, [r9+44]{1to16}
+	VSUBPS zmm12, zmm12, r9, 44, conv=CV_1TO16	# vsubps zmm12, zmm12, [r9+44]{1to16}
+	VSUBPS zmm13, zmm13, r9, 44, conv=CV_1TO16	# vsubps zmm13, zmm13, [r9+44]{1to16}
+	VSUBPS zmm14, zmm14, r9, 44, conv=CV_1TO16	# vsubps zmm14, zmm14, [r9+44]{1to16}
+	VSUBPS zmm15, zmm15, r9, 44, conv=CV_1TO16	# vsubps zmm15, zmm15, [r9+44]{1to16}
+	VMULPS zmm8, zmm8, rcx, 0, conv=CV_1TO16	# vmulps zmm8, zmm8, [rcx+0]{1to16}
+	VMULPS zmm9, zmm9, rcx, 4, conv=CV_1TO16	# vmulps zmm9, zmm9, [rcx+4]{1to16}
+	VMULPS zmm10, zmm10, rcx, 8, conv=CV_1TO16	# vmulps zmm10, zmm10, [rcx+8]{1to16}
+	VMULPS zmm11, zmm11, rcx, 12, conv=CV_1TO16	# vmulps zmm11, zmm11, [rcx+12]{1to16}
+	VMULPS zmm12, zmm12, rcx, 0, conv=CV_1TO16	# vmulps zmm12, zmm12, [rcx+0]{1to16}
+	VMULPS zmm13, zmm13, rcx, 4, conv=CV_1TO16	# vmulps zmm13, zmm13, [rcx+4]{1to16}
+	VMULPS zmm14, zmm14, rcx, 8, conv=CV_1TO16	# vmulps zmm14, zmm14, [rcx+8]{1to16}
+	VMULPS zmm15, zmm15, rcx, 12, conv=CV_1TO16	# vmulps zmm15, zmm15, [rcx+12]{1to16}
+	VFMADD231PS zmm0, zmm8, rsi, 0	# vfmadd231ps zmm0, zmm8, [rsi+0]
+	VFMADD231PS zmm1, zmm8, r10, 0	# vfmadd231ps zmm1, zmm8, [r10+0]
+	VFMADD231PS zmm2, zmm8, r11, 0	# vfmadd231ps zmm2, zmm8, [r11+0]
+	VFMADD231PS zmm3, zmm8, rax, 0	# vfmadd231ps zmm3, zmm8, [rax+0]
+	VFMADD231PS zmm0, zmm12, rsi, 64	# vfmadd231ps zmm0, zmm12, [rsi+64]
+	VFMADD231PS zmm1, zmm12, r10, 64	# vfmadd231ps zmm1, zmm12, [r10+64]
+	VFMADD231PS zmm2, zmm12, r11, 64	# vfmadd231ps zmm2, zmm12, [r11+64]
+	VFMADD231PS zmm3, zmm12, rax, 64	# vfmadd231ps zmm3, zmm12, [rax+64]
+	VFMADD231PS zmm0, zmm9, rsi, 128	# vfmadd231ps zmm0, zmm9, [rsi+128]
+	VFMADD231PS zmm1, zmm9, r10, 128	# vfmadd231ps zmm1, zmm9, [r10+128]
+	VFMADD231PS zmm2, zmm9, r11, 128	# vfmadd231ps zmm2, zmm9, [r11+128]
+	VFMADD231PS zmm3, zmm9, rax, 128	# vfmadd231ps zmm3, zmm9, [rax+128]
+	VFMADD231PS zmm0, zmm13, rsi, 192	# vfmadd231ps zmm0, zmm13, [rsi+192]
+	VFMADD231PS zmm1, zmm13, r10, 192	# vfmadd231ps zmm1, zmm13, [r10+192]
+	VFMADD231PS zmm2, zmm13, r11, 192	# vfmadd231ps zmm2, zmm13, [r11+192]
+	VFMADD231PS zmm3, zmm13, rax, 192	# vfmadd231ps zmm3, zmm13, [rax+192]
+	VFMADD231PS zmm0, zmm10, rsi, 256	# vfmadd231ps zmm0, zmm10, [rsi+256]
+	VFMADD231PS zmm1, zmm10, r10, 256	# vfmadd231ps zmm1, zmm10, [r10+256]
+	VFMADD231PS zmm2, zmm10, r11, 256	# vfmadd231ps zmm2, zmm10, [r11+256]
+	VFMADD231PS zmm3, zmm10, rax, 256	# vfmadd231ps zmm3, zmm10, [rax+256]
+	VFMADD231PS zmm0, zmm14, rsi, 320	# vfmadd231ps zmm0, zmm14, [rsi+320]
+	VFMADD231PS zmm1, zmm14, r10, 320	# vfmadd231ps zmm1, zmm14, [r10+320]
+	VFMADD231PS zmm2, zmm14, r11, 320	# vfmadd231ps zmm2, zmm14, [r11+320]
+	VFMADD231PS zmm3, zmm14, rax, 320	# vfmadd231ps zmm3, zmm14, [rax+320]
+	VFMADD231PS zmm0, zmm11, rsi, 384	# vfmadd231ps zmm0, zmm11, [rsi+384]
+	VFMADD231PS zmm1, zmm11, r10, 384	# vfmadd231ps zmm1, zmm11, [r10+384]
+	VFMADD231PS zmm2, zmm11, r11, 384	# vfmadd231ps zmm2, zmm11, [r11+384]
+	VFMADD231PS zmm3, zmm11, rax, 384	# vfmadd231ps zmm3, zmm11, [rax+384]
+	VFMADD231PS zmm0, zmm15, rsi, 448	# vfmadd231ps zmm0, zmm15, [rsi+448]
+	VFMADD231PS zmm1, zmm15, r10, 448	# vfmadd231ps zmm1, zmm15, [r10+448]
+	VFMADD231PS zmm2, zmm15, r11, 448	# vfmadd231ps zmm2, zmm15, [r11+448]
+	VFMADD231PS zmm3, zmm15, rax, 448	# vfmadd231ps zmm3, zmm15, [rax+448]
+	VLOADUNPACKLPS zmm8, rdi, 74, conv=CV_U8	# vloadunpacklps zmm8, [rdi+74]{uint8}
+	VLOADUNPACKHPS zmm8, rdi, 138, conv=CV_U8	# vloadunpackhps zmm8, [rdi+138]{uint8}
+	VLOADUNPACKLPS zmm9, rdi, 92, conv=CV_U8	# vloadunpacklps zmm9, [rdi+92]{uint8}
+	VLOADUNPACKHPS zmm9, rdi, 156, conv=CV_U8	# vloadunpackhps zmm9, [rdi+156]{uint8}
+	VLOADUNPACKLPS zmm10, rdi, 110, conv=CV_U8	# vloadunpacklps zmm10, [rdi+110]{uint8}
+	VLOADUNPACKHPS zmm10, rdi, 174, conv=CV_U8	# vloadunpackhps zmm10, [rdi+174]{uint8}
+	VLOADUNPACKLPS zmm11, rdi, 128, conv=CV_U8	# vloadunpacklps zmm11, [rdi+128]{uint8}
+	VLOADUNPACKHPS zmm11, rdi, 192, conv=CV_U8	# vloadunpackhps zmm11, [rdi+192]{uint8}
+	VMULPS zmm12, zmm8, r9, 24, conv=CV_1TO16	# vmulps zmm12, zmm8, [r9+24]{1to16}
+	VMULPS zmm13, zmm9, r9, 24, conv=CV_1TO16	# vmulps zmm13, zmm9, [r9+24]{1to16}
+	VMULPS zmm14, zmm10, r9, 24, conv=CV_1TO16	# vmulps zmm14, zmm10, [r9+24]{1to16}
+	VMULPS zmm15, zmm11, r9, 24, conv=CV_1TO16	# vmulps zmm15, zmm11, [r9+24]{1to16}
+	VRNDFXPNTPS zmm12, zmm12, 1	# vrndfxpntps zmm12, zmm12, 1
+	VRNDFXPNTPS zmm13, zmm13, 1	# vrndfxpntps zmm13, zmm13, 1
+	VRNDFXPNTPS zmm14, zmm14, 1	# vrndfxpntps zmm14, zmm14, 1
+	VRNDFXPNTPS zmm15, zmm15, 1	# vrndfxpntps zmm15, zmm15, 1
+	VFNMADD231PS zmm8, zmm12, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm8, zmm12, [r9+0]{1to16}
+	VFNMADD231PS zmm9, zmm13, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm9, zmm13, [r9+0]{1to16}
+	VFNMADD231PS zmm10, zmm14, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm10, zmm14, [r9+0]{1to16}
+	VFNMADD231PS zmm11, zmm15, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm11, zmm15, [r9+0]{1to16}
+	VSUBPS zmm8, zmm8, r9, 44, conv=CV_1TO16	# vsubps zmm8, zmm8, [r9+44]{1to16}
+	VSUBPS zmm9, zmm9, r9, 44, conv=CV_1TO16	# vsubps zmm9, zmm9, [r9+44]{1to16}
+	VSUBPS zmm10, zmm10, r9, 44, conv=CV_1TO16	# vsubps zmm10, zmm10, [r9+44]{1to16}
+	VSUBPS zmm11, zmm11, r9, 44, conv=CV_1TO16	# vsubps zmm11, zmm11, [r9+44]{1to16}
+	VSUBPS zmm12, zmm12, r9, 44, conv=CV_1TO16	# vsubps zmm12, zmm12, [r9+44]{1to16}
+	VSUBPS zmm13, zmm13, r9, 44, conv=CV_1TO16	# vsubps zmm13, zmm13, [r9+44]{1to16}
+	VSUBPS zmm14, zmm14, r9, 44, conv=CV_1TO16	# vsubps zmm14, zmm14, [r9+44]{1to16}
+	VSUBPS zmm15, zmm15, r9, 44, conv=CV_1TO16	# vsubps zmm15, zmm15, [r9+44]{1to16}
+	VMULPS zmm8, zmm8, rcx, 16, conv=CV_1TO16	# vmulps zmm8, zmm8, [rcx+16]{1to16}
+	VMULPS zmm9, zmm9, rcx, 20, conv=CV_1TO16	# vmulps zmm9, zmm9, [rcx+20]{1to16}
+	VMULPS zmm10, zmm10, rcx, 24, conv=CV_1TO16	# vmulps zmm10, zmm10, [rcx+24]{1to16}
+	VMULPS zmm11, zmm11, rcx, 28, conv=CV_1TO16	# vmulps zmm11, zmm11, [rcx+28]{1to16}
+	VMULPS zmm12, zmm12, rcx, 16, conv=CV_1TO16	# vmulps zmm12, zmm12, [rcx+16]{1to16}
+	VMULPS zmm13, zmm13, rcx, 20, conv=CV_1TO16	# vmulps zmm13, zmm13, [rcx+20]{1to16}
+	VMULPS zmm14, zmm14, rcx, 24, conv=CV_1TO16	# vmulps zmm14, zmm14, [rcx+24]{1to16}
+	VMULPS zmm15, zmm15, rcx, 28, conv=CV_1TO16	# vmulps zmm15, zmm15, [rcx+28]{1to16}
+	VFMADD231PS zmm0, zmm8, rsi, 512	# vfmadd231ps zmm0, zmm8, [rsi+512]
+	VFMADD231PS zmm1, zmm8, r10, 512	# vfmadd231ps zmm1, zmm8, [r10+512]
+	VFMADD231PS zmm2, zmm8, r11, 512	# vfmadd231ps zmm2, zmm8, [r11+512]
+	VFMADD231PS zmm3, zmm8, rax, 512	# vfmadd231ps zmm3, zmm8, [rax+512]
+	VFMADD231PS zmm0, zmm12, rsi, 576	# vfmadd231ps zmm0, zmm12, [rsi+576]
+	VFMADD231PS zmm1, zmm12, r10, 576	# vfmadd231ps zmm1, zmm12, [r10+576]
+	VFMADD231PS zmm2, zmm12, r11, 576	# vfmadd231ps zmm2, zmm12, [r11+576]
+	VFMADD231PS zmm3, zmm12, rax, 576	# vfmadd231ps zmm3, zmm12, [rax+576]
+	VFMADD231PS zmm0, zmm9, rsi, 640	# vfmadd231ps zmm0, zmm9, [rsi+640]
+	VFMADD231PS zmm1, zmm9, r10, 640	# vfmadd231ps zmm1, zmm9, [r10+640]
+	VFMADD231PS zmm2, zmm9, r11, 640	# vfmadd231ps zmm2, zmm9, [r11+640]
+	VFMADD231PS zmm3, zmm9, rax, 640	# vfmadd231ps zmm3, zmm9, [rax+640]
+	VFMADD231PS zmm0, zmm13, rsi, 704	# vfmadd231ps zmm0, zmm13, [rsi+704]
+	VFMADD231PS zmm1, zmm13, r10, 704	# vfmadd231ps zmm1, zmm13, [r10+704]
+	VFMADD231PS zmm2, zmm13, r11, 704	# vfmadd231ps zmm2, zmm13, [r11+704]
+	VFMADD231PS zmm3, zmm13, rax, 704	# vfmadd231ps zmm3, zmm13, [rax+704]
+	VFMADD231PS zmm0, zmm10, rsi, 768	# vfmadd231ps zmm0, zmm10, [rsi+768]
+	VFMADD231PS zmm1, zmm10, r10, 768	# vfmadd231ps zmm1, zmm10, [r10+768]
+	VFMADD231PS zmm2, zmm10, r11, 768	# vfmadd231ps zmm2, zmm10, [r11+768]
+	VFMADD231PS zmm3, zmm10, rax, 768	# vfmadd231ps zmm3, zmm10, [rax+768]
+	VFMADD231PS zmm0, zmm14, rsi, 832	# vfmadd231ps zmm0, zmm14, [rsi+832]
+	VFMADD231PS zmm1, zmm14, r10, 832	# vfmadd231ps zmm1, zmm14, [r10+832]
+	VFMADD231PS zmm2, zmm14, r11, 832	# vfmadd231ps zmm2, zmm14, [r11+832]
+	VFMADD231PS zmm3, zmm14, rax, 832	# vfmadd231ps zmm3, zmm14, [rax+832]
+	VFMADD231PS zmm0, zmm11, rsi, 896	# vfmadd231ps zmm0, zmm11, [rsi+896]
+	VFMADD231PS zmm1, zmm11, r10, 896	# vfmadd231ps zmm1, zmm11, [r10+896]
+	VFMADD231PS zmm2, zmm11, r11, 896	# vfmadd231ps zmm2, zmm11, [r11+896]
+	VFMADD231PS zmm3, zmm11, rax, 896	# vfmadd231ps zmm3, zmm11, [rax+896]
+	VFMADD231PS zmm0, zmm15, rsi, 960	# vfmadd231ps zmm0, zmm15, [rsi+960]
+	VFMADD231PS zmm1, zmm15, r10, 960	# vfmadd231ps zmm1, zmm15, [r10+960]
+	VFMADD231PS zmm2, zmm15, r11, 960	# vfmadd231ps zmm2, zmm15, [r11+960]
+	VFMADD231PS zmm3, zmm15, rax, 960	# vfmadd231ps zmm3, zmm15, [rax+960]
+	VMOVAPS_ST r8, 0, zmm0	# vmovaps [r8+0], zmm0
+	VMOVAPS_ST r8, 64, zmm1	# vmovaps [r8+64], zmm1
+	VMOVAPS_ST r8, 128, zmm2	# vmovaps [r8+128], zmm2
+	VMOVAPS_ST r8, 192, zmm3	# vmovaps [r8+192], zmm3
+    ret
+    .size phi_q4_0_4, .-phi_q4_0_4
+
+# phi_q4_0_8: eight Q4_0 blocks, against 8 activation row(s)
+    .globl phi_q4_0_8
+    .type phi_q4_0_8, @function
+phi_q4_0_8:
+    mov 8(%rsp), %r11
+    lea (%rdi,%r11,2), %rax
+	VPREFETCH0 rax, 0	# vprefetch0 [rax+0]
+	VPREFETCH0 rax, 64	# vprefetch0 [rax+64]
+	VPREFETCH0 rax, 128	# vprefetch0 [rax+128]
+	VPREFETCH0 rax, 192	# vprefetch0 [rax+192]
+    lea (%rax,%r11,2), %rax
+	VPREFETCH1 rax, 0	# vprefetch1 [rax+0]
+	VPREFETCH1 rax, 64	# vprefetch1 [rax+64]
+	VPREFETCH1 rax, 128	# vprefetch1 [rax+128]
+	VPREFETCH1 rax, 192	# vprefetch1 [rax+192]
+    push %rbx
+    push %r13
+    push %r14
+    push %r15
+	VPXORD zmm16, zmm16, zmm16	# vpxord zmm16, zmm16, zmm16
+    mov $1, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 0, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+0]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 64, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+64]{float16}
+    mov $2, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 18, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+18]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 82, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+82]{float16}
+    mov $4, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 36, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+36]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 100, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+100]{float16}
+    mov $8, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 54, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+54]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 118, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+118]{float16}
+    mov $16, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 72, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+72]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 136, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+136]{float16}
+    mov $32, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 90, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+90]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 154, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+154]{float16}
+    mov $64, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 108, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+108]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 172, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+172]{float16}
+    mov $128, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 126, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+126]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 190, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+190]{float16}
+	VMOVAPS_ST rcx, 0, zmm16	# vmovaps [rcx+0], zmm16
+    mov 8(%rdx), %r10
+    mov 16(%rdx), %r11
+    mov 24(%rdx), %rax
+    mov 32(%rdx), %rbx
+    mov 40(%rdx), %r13
+    mov 48(%rdx), %r14
+    mov 56(%rdx), %r15
+	VMOVAPS zmm0, r8, 0	# vmovaps zmm0, [r8+0]
+	VMOVAPS zmm1, r8, 64	# vmovaps zmm1, [r8+64]
+	VMOVAPS zmm2, r8, 128	# vmovaps zmm2, [r8+128]
+	VMOVAPS zmm3, r8, 192	# vmovaps zmm3, [r8+192]
+	VMOVAPS zmm4, r8, 256	# vmovaps zmm4, [r8+256]
+	VMOVAPS zmm5, r8, 320	# vmovaps zmm5, [r8+320]
+	VMOVAPS zmm6, r8, 384	# vmovaps zmm6, [r8+384]
+	VMOVAPS zmm7, r8, 448	# vmovaps zmm7, [r8+448]
+	VLOADUNPACKLPS zmm8, rdi, 2, conv=CV_U8	# vloadunpacklps zmm8, [rdi+2]{uint8}
+	VLOADUNPACKHPS zmm8, rdi, 66, conv=CV_U8	# vloadunpackhps zmm8, [rdi+66]{uint8}
+	VLOADUNPACKLPS zmm9, rdi, 20, conv=CV_U8	# vloadunpacklps zmm9, [rdi+20]{uint8}
+	VLOADUNPACKHPS zmm9, rdi, 84, conv=CV_U8	# vloadunpackhps zmm9, [rdi+84]{uint8}
+	VLOADUNPACKLPS zmm10, rdi, 38, conv=CV_U8	# vloadunpacklps zmm10, [rdi+38]{uint8}
+	VLOADUNPACKHPS zmm10, rdi, 102, conv=CV_U8	# vloadunpackhps zmm10, [rdi+102]{uint8}
+	VLOADUNPACKLPS zmm11, rdi, 56, conv=CV_U8	# vloadunpacklps zmm11, [rdi+56]{uint8}
+	VLOADUNPACKHPS zmm11, rdi, 120, conv=CV_U8	# vloadunpackhps zmm11, [rdi+120]{uint8}
+	VMULPS zmm12, zmm8, r9, 24, conv=CV_1TO16	# vmulps zmm12, zmm8, [r9+24]{1to16}
+	VMULPS zmm13, zmm9, r9, 24, conv=CV_1TO16	# vmulps zmm13, zmm9, [r9+24]{1to16}
+	VMULPS zmm14, zmm10, r9, 24, conv=CV_1TO16	# vmulps zmm14, zmm10, [r9+24]{1to16}
+	VMULPS zmm15, zmm11, r9, 24, conv=CV_1TO16	# vmulps zmm15, zmm11, [r9+24]{1to16}
+	VRNDFXPNTPS zmm12, zmm12, 1	# vrndfxpntps zmm12, zmm12, 1
+	VRNDFXPNTPS zmm13, zmm13, 1	# vrndfxpntps zmm13, zmm13, 1
+	VRNDFXPNTPS zmm14, zmm14, 1	# vrndfxpntps zmm14, zmm14, 1
+	VRNDFXPNTPS zmm15, zmm15, 1	# vrndfxpntps zmm15, zmm15, 1
+	VFNMADD231PS zmm8, zmm12, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm8, zmm12, [r9+0]{1to16}
+	VFNMADD231PS zmm9, zmm13, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm9, zmm13, [r9+0]{1to16}
+	VFNMADD231PS zmm10, zmm14, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm10, zmm14, [r9+0]{1to16}
+	VFNMADD231PS zmm11, zmm15, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm11, zmm15, [r9+0]{1to16}
+	VSUBPS zmm8, zmm8, r9, 44, conv=CV_1TO16	# vsubps zmm8, zmm8, [r9+44]{1to16}
+	VSUBPS zmm9, zmm9, r9, 44, conv=CV_1TO16	# vsubps zmm9, zmm9, [r9+44]{1to16}
+	VSUBPS zmm10, zmm10, r9, 44, conv=CV_1TO16	# vsubps zmm10, zmm10, [r9+44]{1to16}
+	VSUBPS zmm11, zmm11, r9, 44, conv=CV_1TO16	# vsubps zmm11, zmm11, [r9+44]{1to16}
+	VSUBPS zmm12, zmm12, r9, 44, conv=CV_1TO16	# vsubps zmm12, zmm12, [r9+44]{1to16}
+	VSUBPS zmm13, zmm13, r9, 44, conv=CV_1TO16	# vsubps zmm13, zmm13, [r9+44]{1to16}
+	VSUBPS zmm14, zmm14, r9, 44, conv=CV_1TO16	# vsubps zmm14, zmm14, [r9+44]{1to16}
+	VSUBPS zmm15, zmm15, r9, 44, conv=CV_1TO16	# vsubps zmm15, zmm15, [r9+44]{1to16}
+	VMULPS zmm8, zmm8, rcx, 0, conv=CV_1TO16	# vmulps zmm8, zmm8, [rcx+0]{1to16}
+	VMULPS zmm9, zmm9, rcx, 4, conv=CV_1TO16	# vmulps zmm9, zmm9, [rcx+4]{1to16}
+	VMULPS zmm10, zmm10, rcx, 8, conv=CV_1TO16	# vmulps zmm10, zmm10, [rcx+8]{1to16}
+	VMULPS zmm11, zmm11, rcx, 12, conv=CV_1TO16	# vmulps zmm11, zmm11, [rcx+12]{1to16}
+	VMULPS zmm12, zmm12, rcx, 0, conv=CV_1TO16	# vmulps zmm12, zmm12, [rcx+0]{1to16}
+	VMULPS zmm13, zmm13, rcx, 4, conv=CV_1TO16	# vmulps zmm13, zmm13, [rcx+4]{1to16}
+	VMULPS zmm14, zmm14, rcx, 8, conv=CV_1TO16	# vmulps zmm14, zmm14, [rcx+8]{1to16}
+	VMULPS zmm15, zmm15, rcx, 12, conv=CV_1TO16	# vmulps zmm15, zmm15, [rcx+12]{1to16}
+	VFMADD231PS zmm0, zmm8, rsi, 0	# vfmadd231ps zmm0, zmm8, [rsi+0]
+	VFMADD231PS zmm1, zmm8, r10, 0	# vfmadd231ps zmm1, zmm8, [r10+0]
+	VFMADD231PS zmm2, zmm8, r11, 0	# vfmadd231ps zmm2, zmm8, [r11+0]
+	VFMADD231PS zmm3, zmm8, rax, 0	# vfmadd231ps zmm3, zmm8, [rax+0]
+	VFMADD231PS zmm4, zmm8, rbx, 0	# vfmadd231ps zmm4, zmm8, [rbx+0]
+	VFMADD231PS zmm5, zmm8, r13, 0	# vfmadd231ps zmm5, zmm8, [r13+0]
+	VFMADD231PS zmm6, zmm8, r14, 0	# vfmadd231ps zmm6, zmm8, [r14+0]
+	VFMADD231PS zmm7, zmm8, r15, 0	# vfmadd231ps zmm7, zmm8, [r15+0]
+	VFMADD231PS zmm0, zmm12, rsi, 64	# vfmadd231ps zmm0, zmm12, [rsi+64]
+	VFMADD231PS zmm1, zmm12, r10, 64	# vfmadd231ps zmm1, zmm12, [r10+64]
+	VFMADD231PS zmm2, zmm12, r11, 64	# vfmadd231ps zmm2, zmm12, [r11+64]
+	VFMADD231PS zmm3, zmm12, rax, 64	# vfmadd231ps zmm3, zmm12, [rax+64]
+	VFMADD231PS zmm4, zmm12, rbx, 64	# vfmadd231ps zmm4, zmm12, [rbx+64]
+	VFMADD231PS zmm5, zmm12, r13, 64	# vfmadd231ps zmm5, zmm12, [r13+64]
+	VFMADD231PS zmm6, zmm12, r14, 64	# vfmadd231ps zmm6, zmm12, [r14+64]
+	VFMADD231PS zmm7, zmm12, r15, 64	# vfmadd231ps zmm7, zmm12, [r15+64]
+	VFMADD231PS zmm0, zmm9, rsi, 128	# vfmadd231ps zmm0, zmm9, [rsi+128]
+	VFMADD231PS zmm1, zmm9, r10, 128	# vfmadd231ps zmm1, zmm9, [r10+128]
+	VFMADD231PS zmm2, zmm9, r11, 128	# vfmadd231ps zmm2, zmm9, [r11+128]
+	VFMADD231PS zmm3, zmm9, rax, 128	# vfmadd231ps zmm3, zmm9, [rax+128]
+	VFMADD231PS zmm4, zmm9, rbx, 128	# vfmadd231ps zmm4, zmm9, [rbx+128]
+	VFMADD231PS zmm5, zmm9, r13, 128	# vfmadd231ps zmm5, zmm9, [r13+128]
+	VFMADD231PS zmm6, zmm9, r14, 128	# vfmadd231ps zmm6, zmm9, [r14+128]
+	VFMADD231PS zmm7, zmm9, r15, 128	# vfmadd231ps zmm7, zmm9, [r15+128]
+	VFMADD231PS zmm0, zmm13, rsi, 192	# vfmadd231ps zmm0, zmm13, [rsi+192]
+	VFMADD231PS zmm1, zmm13, r10, 192	# vfmadd231ps zmm1, zmm13, [r10+192]
+	VFMADD231PS zmm2, zmm13, r11, 192	# vfmadd231ps zmm2, zmm13, [r11+192]
+	VFMADD231PS zmm3, zmm13, rax, 192	# vfmadd231ps zmm3, zmm13, [rax+192]
+	VFMADD231PS zmm4, zmm13, rbx, 192	# vfmadd231ps zmm4, zmm13, [rbx+192]
+	VFMADD231PS zmm5, zmm13, r13, 192	# vfmadd231ps zmm5, zmm13, [r13+192]
+	VFMADD231PS zmm6, zmm13, r14, 192	# vfmadd231ps zmm6, zmm13, [r14+192]
+	VFMADD231PS zmm7, zmm13, r15, 192	# vfmadd231ps zmm7, zmm13, [r15+192]
+	VFMADD231PS zmm0, zmm10, rsi, 256	# vfmadd231ps zmm0, zmm10, [rsi+256]
+	VFMADD231PS zmm1, zmm10, r10, 256	# vfmadd231ps zmm1, zmm10, [r10+256]
+	VFMADD231PS zmm2, zmm10, r11, 256	# vfmadd231ps zmm2, zmm10, [r11+256]
+	VFMADD231PS zmm3, zmm10, rax, 256	# vfmadd231ps zmm3, zmm10, [rax+256]
+	VFMADD231PS zmm4, zmm10, rbx, 256	# vfmadd231ps zmm4, zmm10, [rbx+256]
+	VFMADD231PS zmm5, zmm10, r13, 256	# vfmadd231ps zmm5, zmm10, [r13+256]
+	VFMADD231PS zmm6, zmm10, r14, 256	# vfmadd231ps zmm6, zmm10, [r14+256]
+	VFMADD231PS zmm7, zmm10, r15, 256	# vfmadd231ps zmm7, zmm10, [r15+256]
+	VFMADD231PS zmm0, zmm14, rsi, 320	# vfmadd231ps zmm0, zmm14, [rsi+320]
+	VFMADD231PS zmm1, zmm14, r10, 320	# vfmadd231ps zmm1, zmm14, [r10+320]
+	VFMADD231PS zmm2, zmm14, r11, 320	# vfmadd231ps zmm2, zmm14, [r11+320]
+	VFMADD231PS zmm3, zmm14, rax, 320	# vfmadd231ps zmm3, zmm14, [rax+320]
+	VFMADD231PS zmm4, zmm14, rbx, 320	# vfmadd231ps zmm4, zmm14, [rbx+320]
+	VFMADD231PS zmm5, zmm14, r13, 320	# vfmadd231ps zmm5, zmm14, [r13+320]
+	VFMADD231PS zmm6, zmm14, r14, 320	# vfmadd231ps zmm6, zmm14, [r14+320]
+	VFMADD231PS zmm7, zmm14, r15, 320	# vfmadd231ps zmm7, zmm14, [r15+320]
+	VFMADD231PS zmm0, zmm11, rsi, 384	# vfmadd231ps zmm0, zmm11, [rsi+384]
+	VFMADD231PS zmm1, zmm11, r10, 384	# vfmadd231ps zmm1, zmm11, [r10+384]
+	VFMADD231PS zmm2, zmm11, r11, 384	# vfmadd231ps zmm2, zmm11, [r11+384]
+	VFMADD231PS zmm3, zmm11, rax, 384	# vfmadd231ps zmm3, zmm11, [rax+384]
+	VFMADD231PS zmm4, zmm11, rbx, 384	# vfmadd231ps zmm4, zmm11, [rbx+384]
+	VFMADD231PS zmm5, zmm11, r13, 384	# vfmadd231ps zmm5, zmm11, [r13+384]
+	VFMADD231PS zmm6, zmm11, r14, 384	# vfmadd231ps zmm6, zmm11, [r14+384]
+	VFMADD231PS zmm7, zmm11, r15, 384	# vfmadd231ps zmm7, zmm11, [r15+384]
+	VFMADD231PS zmm0, zmm15, rsi, 448	# vfmadd231ps zmm0, zmm15, [rsi+448]
+	VFMADD231PS zmm1, zmm15, r10, 448	# vfmadd231ps zmm1, zmm15, [r10+448]
+	VFMADD231PS zmm2, zmm15, r11, 448	# vfmadd231ps zmm2, zmm15, [r11+448]
+	VFMADD231PS zmm3, zmm15, rax, 448	# vfmadd231ps zmm3, zmm15, [rax+448]
+	VFMADD231PS zmm4, zmm15, rbx, 448	# vfmadd231ps zmm4, zmm15, [rbx+448]
+	VFMADD231PS zmm5, zmm15, r13, 448	# vfmadd231ps zmm5, zmm15, [r13+448]
+	VFMADD231PS zmm6, zmm15, r14, 448	# vfmadd231ps zmm6, zmm15, [r14+448]
+	VFMADD231PS zmm7, zmm15, r15, 448	# vfmadd231ps zmm7, zmm15, [r15+448]
+	VLOADUNPACKLPS zmm8, rdi, 74, conv=CV_U8	# vloadunpacklps zmm8, [rdi+74]{uint8}
+	VLOADUNPACKHPS zmm8, rdi, 138, conv=CV_U8	# vloadunpackhps zmm8, [rdi+138]{uint8}
+	VLOADUNPACKLPS zmm9, rdi, 92, conv=CV_U8	# vloadunpacklps zmm9, [rdi+92]{uint8}
+	VLOADUNPACKHPS zmm9, rdi, 156, conv=CV_U8	# vloadunpackhps zmm9, [rdi+156]{uint8}
+	VLOADUNPACKLPS zmm10, rdi, 110, conv=CV_U8	# vloadunpacklps zmm10, [rdi+110]{uint8}
+	VLOADUNPACKHPS zmm10, rdi, 174, conv=CV_U8	# vloadunpackhps zmm10, [rdi+174]{uint8}
+	VLOADUNPACKLPS zmm11, rdi, 128, conv=CV_U8	# vloadunpacklps zmm11, [rdi+128]{uint8}
+	VLOADUNPACKHPS zmm11, rdi, 192, conv=CV_U8	# vloadunpackhps zmm11, [rdi+192]{uint8}
+	VMULPS zmm12, zmm8, r9, 24, conv=CV_1TO16	# vmulps zmm12, zmm8, [r9+24]{1to16}
+	VMULPS zmm13, zmm9, r9, 24, conv=CV_1TO16	# vmulps zmm13, zmm9, [r9+24]{1to16}
+	VMULPS zmm14, zmm10, r9, 24, conv=CV_1TO16	# vmulps zmm14, zmm10, [r9+24]{1to16}
+	VMULPS zmm15, zmm11, r9, 24, conv=CV_1TO16	# vmulps zmm15, zmm11, [r9+24]{1to16}
+	VRNDFXPNTPS zmm12, zmm12, 1	# vrndfxpntps zmm12, zmm12, 1
+	VRNDFXPNTPS zmm13, zmm13, 1	# vrndfxpntps zmm13, zmm13, 1
+	VRNDFXPNTPS zmm14, zmm14, 1	# vrndfxpntps zmm14, zmm14, 1
+	VRNDFXPNTPS zmm15, zmm15, 1	# vrndfxpntps zmm15, zmm15, 1
+	VFNMADD231PS zmm8, zmm12, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm8, zmm12, [r9+0]{1to16}
+	VFNMADD231PS zmm9, zmm13, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm9, zmm13, [r9+0]{1to16}
+	VFNMADD231PS zmm10, zmm14, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm10, zmm14, [r9+0]{1to16}
+	VFNMADD231PS zmm11, zmm15, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm11, zmm15, [r9+0]{1to16}
+	VSUBPS zmm8, zmm8, r9, 44, conv=CV_1TO16	# vsubps zmm8, zmm8, [r9+44]{1to16}
+	VSUBPS zmm9, zmm9, r9, 44, conv=CV_1TO16	# vsubps zmm9, zmm9, [r9+44]{1to16}
+	VSUBPS zmm10, zmm10, r9, 44, conv=CV_1TO16	# vsubps zmm10, zmm10, [r9+44]{1to16}
+	VSUBPS zmm11, zmm11, r9, 44, conv=CV_1TO16	# vsubps zmm11, zmm11, [r9+44]{1to16}
+	VSUBPS zmm12, zmm12, r9, 44, conv=CV_1TO16	# vsubps zmm12, zmm12, [r9+44]{1to16}
+	VSUBPS zmm13, zmm13, r9, 44, conv=CV_1TO16	# vsubps zmm13, zmm13, [r9+44]{1to16}
+	VSUBPS zmm14, zmm14, r9, 44, conv=CV_1TO16	# vsubps zmm14, zmm14, [r9+44]{1to16}
+	VSUBPS zmm15, zmm15, r9, 44, conv=CV_1TO16	# vsubps zmm15, zmm15, [r9+44]{1to16}
+	VMULPS zmm8, zmm8, rcx, 16, conv=CV_1TO16	# vmulps zmm8, zmm8, [rcx+16]{1to16}
+	VMULPS zmm9, zmm9, rcx, 20, conv=CV_1TO16	# vmulps zmm9, zmm9, [rcx+20]{1to16}
+	VMULPS zmm10, zmm10, rcx, 24, conv=CV_1TO16	# vmulps zmm10, zmm10, [rcx+24]{1to16}
+	VMULPS zmm11, zmm11, rcx, 28, conv=CV_1TO16	# vmulps zmm11, zmm11, [rcx+28]{1to16}
+	VMULPS zmm12, zmm12, rcx, 16, conv=CV_1TO16	# vmulps zmm12, zmm12, [rcx+16]{1to16}
+	VMULPS zmm13, zmm13, rcx, 20, conv=CV_1TO16	# vmulps zmm13, zmm13, [rcx+20]{1to16}
+	VMULPS zmm14, zmm14, rcx, 24, conv=CV_1TO16	# vmulps zmm14, zmm14, [rcx+24]{1to16}
+	VMULPS zmm15, zmm15, rcx, 28, conv=CV_1TO16	# vmulps zmm15, zmm15, [rcx+28]{1to16}
+	VFMADD231PS zmm0, zmm8, rsi, 512	# vfmadd231ps zmm0, zmm8, [rsi+512]
+	VFMADD231PS zmm1, zmm8, r10, 512	# vfmadd231ps zmm1, zmm8, [r10+512]
+	VFMADD231PS zmm2, zmm8, r11, 512	# vfmadd231ps zmm2, zmm8, [r11+512]
+	VFMADD231PS zmm3, zmm8, rax, 512	# vfmadd231ps zmm3, zmm8, [rax+512]
+	VFMADD231PS zmm4, zmm8, rbx, 512	# vfmadd231ps zmm4, zmm8, [rbx+512]
+	VFMADD231PS zmm5, zmm8, r13, 512	# vfmadd231ps zmm5, zmm8, [r13+512]
+	VFMADD231PS zmm6, zmm8, r14, 512	# vfmadd231ps zmm6, zmm8, [r14+512]
+	VFMADD231PS zmm7, zmm8, r15, 512	# vfmadd231ps zmm7, zmm8, [r15+512]
+	VFMADD231PS zmm0, zmm12, rsi, 576	# vfmadd231ps zmm0, zmm12, [rsi+576]
+	VFMADD231PS zmm1, zmm12, r10, 576	# vfmadd231ps zmm1, zmm12, [r10+576]
+	VFMADD231PS zmm2, zmm12, r11, 576	# vfmadd231ps zmm2, zmm12, [r11+576]
+	VFMADD231PS zmm3, zmm12, rax, 576	# vfmadd231ps zmm3, zmm12, [rax+576]
+	VFMADD231PS zmm4, zmm12, rbx, 576	# vfmadd231ps zmm4, zmm12, [rbx+576]
+	VFMADD231PS zmm5, zmm12, r13, 576	# vfmadd231ps zmm5, zmm12, [r13+576]
+	VFMADD231PS zmm6, zmm12, r14, 576	# vfmadd231ps zmm6, zmm12, [r14+576]
+	VFMADD231PS zmm7, zmm12, r15, 576	# vfmadd231ps zmm7, zmm12, [r15+576]
+	VFMADD231PS zmm0, zmm9, rsi, 640	# vfmadd231ps zmm0, zmm9, [rsi+640]
+	VFMADD231PS zmm1, zmm9, r10, 640	# vfmadd231ps zmm1, zmm9, [r10+640]
+	VFMADD231PS zmm2, zmm9, r11, 640	# vfmadd231ps zmm2, zmm9, [r11+640]
+	VFMADD231PS zmm3, zmm9, rax, 640	# vfmadd231ps zmm3, zmm9, [rax+640]
+	VFMADD231PS zmm4, zmm9, rbx, 640	# vfmadd231ps zmm4, zmm9, [rbx+640]
+	VFMADD231PS zmm5, zmm9, r13, 640	# vfmadd231ps zmm5, zmm9, [r13+640]
+	VFMADD231PS zmm6, zmm9, r14, 640	# vfmadd231ps zmm6, zmm9, [r14+640]
+	VFMADD231PS zmm7, zmm9, r15, 640	# vfmadd231ps zmm7, zmm9, [r15+640]
+	VFMADD231PS zmm0, zmm13, rsi, 704	# vfmadd231ps zmm0, zmm13, [rsi+704]
+	VFMADD231PS zmm1, zmm13, r10, 704	# vfmadd231ps zmm1, zmm13, [r10+704]
+	VFMADD231PS zmm2, zmm13, r11, 704	# vfmadd231ps zmm2, zmm13, [r11+704]
+	VFMADD231PS zmm3, zmm13, rax, 704	# vfmadd231ps zmm3, zmm13, [rax+704]
+	VFMADD231PS zmm4, zmm13, rbx, 704	# vfmadd231ps zmm4, zmm13, [rbx+704]
+	VFMADD231PS zmm5, zmm13, r13, 704	# vfmadd231ps zmm5, zmm13, [r13+704]
+	VFMADD231PS zmm6, zmm13, r14, 704	# vfmadd231ps zmm6, zmm13, [r14+704]
+	VFMADD231PS zmm7, zmm13, r15, 704	# vfmadd231ps zmm7, zmm13, [r15+704]
+	VFMADD231PS zmm0, zmm10, rsi, 768	# vfmadd231ps zmm0, zmm10, [rsi+768]
+	VFMADD231PS zmm1, zmm10, r10, 768	# vfmadd231ps zmm1, zmm10, [r10+768]
+	VFMADD231PS zmm2, zmm10, r11, 768	# vfmadd231ps zmm2, zmm10, [r11+768]
+	VFMADD231PS zmm3, zmm10, rax, 768	# vfmadd231ps zmm3, zmm10, [rax+768]
+	VFMADD231PS zmm4, zmm10, rbx, 768	# vfmadd231ps zmm4, zmm10, [rbx+768]
+	VFMADD231PS zmm5, zmm10, r13, 768	# vfmadd231ps zmm5, zmm10, [r13+768]
+	VFMADD231PS zmm6, zmm10, r14, 768	# vfmadd231ps zmm6, zmm10, [r14+768]
+	VFMADD231PS zmm7, zmm10, r15, 768	# vfmadd231ps zmm7, zmm10, [r15+768]
+	VFMADD231PS zmm0, zmm14, rsi, 832	# vfmadd231ps zmm0, zmm14, [rsi+832]
+	VFMADD231PS zmm1, zmm14, r10, 832	# vfmadd231ps zmm1, zmm14, [r10+832]
+	VFMADD231PS zmm2, zmm14, r11, 832	# vfmadd231ps zmm2, zmm14, [r11+832]
+	VFMADD231PS zmm3, zmm14, rax, 832	# vfmadd231ps zmm3, zmm14, [rax+832]
+	VFMADD231PS zmm4, zmm14, rbx, 832	# vfmadd231ps zmm4, zmm14, [rbx+832]
+	VFMADD231PS zmm5, zmm14, r13, 832	# vfmadd231ps zmm5, zmm14, [r13+832]
+	VFMADD231PS zmm6, zmm14, r14, 832	# vfmadd231ps zmm6, zmm14, [r14+832]
+	VFMADD231PS zmm7, zmm14, r15, 832	# vfmadd231ps zmm7, zmm14, [r15+832]
+	VFMADD231PS zmm0, zmm11, rsi, 896	# vfmadd231ps zmm0, zmm11, [rsi+896]
+	VFMADD231PS zmm1, zmm11, r10, 896	# vfmadd231ps zmm1, zmm11, [r10+896]
+	VFMADD231PS zmm2, zmm11, r11, 896	# vfmadd231ps zmm2, zmm11, [r11+896]
+	VFMADD231PS zmm3, zmm11, rax, 896	# vfmadd231ps zmm3, zmm11, [rax+896]
+	VFMADD231PS zmm4, zmm11, rbx, 896	# vfmadd231ps zmm4, zmm11, [rbx+896]
+	VFMADD231PS zmm5, zmm11, r13, 896	# vfmadd231ps zmm5, zmm11, [r13+896]
+	VFMADD231PS zmm6, zmm11, r14, 896	# vfmadd231ps zmm6, zmm11, [r14+896]
+	VFMADD231PS zmm7, zmm11, r15, 896	# vfmadd231ps zmm7, zmm11, [r15+896]
+	VFMADD231PS zmm0, zmm15, rsi, 960	# vfmadd231ps zmm0, zmm15, [rsi+960]
+	VFMADD231PS zmm1, zmm15, r10, 960	# vfmadd231ps zmm1, zmm15, [r10+960]
+	VFMADD231PS zmm2, zmm15, r11, 960	# vfmadd231ps zmm2, zmm15, [r11+960]
+	VFMADD231PS zmm3, zmm15, rax, 960	# vfmadd231ps zmm3, zmm15, [rax+960]
+	VFMADD231PS zmm4, zmm15, rbx, 960	# vfmadd231ps zmm4, zmm15, [rbx+960]
+	VFMADD231PS zmm5, zmm15, r13, 960	# vfmadd231ps zmm5, zmm15, [r13+960]
+	VFMADD231PS zmm6, zmm15, r14, 960	# vfmadd231ps zmm6, zmm15, [r14+960]
+	VFMADD231PS zmm7, zmm15, r15, 960	# vfmadd231ps zmm7, zmm15, [r15+960]
+	VMOVAPS_ST r8, 0, zmm0	# vmovaps [r8+0], zmm0
+	VMOVAPS_ST r8, 64, zmm1	# vmovaps [r8+64], zmm1
+	VMOVAPS_ST r8, 128, zmm2	# vmovaps [r8+128], zmm2
+	VMOVAPS_ST r8, 192, zmm3	# vmovaps [r8+192], zmm3
+	VMOVAPS_ST r8, 256, zmm4	# vmovaps [r8+256], zmm4
+	VMOVAPS_ST r8, 320, zmm5	# vmovaps [r8+320], zmm5
+	VMOVAPS_ST r8, 384, zmm6	# vmovaps [r8+384], zmm6
+	VMOVAPS_ST r8, 448, zmm7	# vmovaps [r8+448], zmm7
+    pop %r15
+    pop %r14
+    pop %r13
+    pop %rbx
+    ret
+    .size phi_q4_0_8, .-phi_q4_0_8
+
+# phi_q4_0_1h: eight Q4_0 blocks, against 1 activation row(s), float16
+    .globl phi_q4_0_1h
+    .type phi_q4_0_1h, @function
+phi_q4_0_1h:
+    mov 8(%rsp), %r11
+    lea (%rdi,%r11,2), %rax
+	VPREFETCH0 rax, 0	# vprefetch0 [rax+0]
+	VPREFETCH0 rax, 64	# vprefetch0 [rax+64]
+	VPREFETCH0 rax, 128	# vprefetch0 [rax+128]
+	VPREFETCH0 rax, 192	# vprefetch0 [rax+192]
+    lea (%rax,%r11,2), %rax
+	VPREFETCH1 rax, 0	# vprefetch1 [rax+0]
+	VPREFETCH1 rax, 64	# vprefetch1 [rax+64]
+	VPREFETCH1 rax, 128	# vprefetch1 [rax+128]
+	VPREFETCH1 rax, 192	# vprefetch1 [rax+192]
+	VPXORD zmm16, zmm16, zmm16	# vpxord zmm16, zmm16, zmm16
+    mov $1, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 0, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+0]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 64, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+64]{float16}
+    mov $2, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 18, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+18]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 82, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+82]{float16}
+    mov $4, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 36, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+36]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 100, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+100]{float16}
+    mov $8, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 54, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+54]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 118, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+118]{float16}
+    mov $16, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 72, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+72]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 136, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+136]{float16}
+    mov $32, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 90, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+90]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 154, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+154]{float16}
+    mov $64, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 108, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+108]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 172, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+172]{float16}
+    mov $128, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 126, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+126]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 190, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+190]{float16}
+	VMOVAPS_ST rcx, 0, zmm16	# vmovaps [rcx+0], zmm16
+	VMOVAPS zmm0, r8, 0	# vmovaps zmm0, [r8+0]
+	VPXORD zmm1, zmm1, zmm1	# vpxord zmm1, zmm1, zmm1
+	VPXORD zmm2, zmm2, zmm2	# vpxord zmm2, zmm2, zmm2
+	VPXORD zmm3, zmm3, zmm3	# vpxord zmm3, zmm3, zmm3
+	VLOADUNPACKLPS zmm8, rdi, 2, conv=CV_U8	# vloadunpacklps zmm8, [rdi+2]{uint8}
+	VLOADUNPACKHPS zmm8, rdi, 66, conv=CV_U8	# vloadunpackhps zmm8, [rdi+66]{uint8}
+	VLOADUNPACKLPS zmm9, rdi, 20, conv=CV_U8	# vloadunpacklps zmm9, [rdi+20]{uint8}
+	VLOADUNPACKHPS zmm9, rdi, 84, conv=CV_U8	# vloadunpackhps zmm9, [rdi+84]{uint8}
+	VLOADUNPACKLPS zmm10, rdi, 38, conv=CV_U8	# vloadunpacklps zmm10, [rdi+38]{uint8}
+	VLOADUNPACKHPS zmm10, rdi, 102, conv=CV_U8	# vloadunpackhps zmm10, [rdi+102]{uint8}
+	VLOADUNPACKLPS zmm11, rdi, 56, conv=CV_U8	# vloadunpacklps zmm11, [rdi+56]{uint8}
+	VLOADUNPACKHPS zmm11, rdi, 120, conv=CV_U8	# vloadunpackhps zmm11, [rdi+120]{uint8}
+	VMULPS zmm12, zmm8, r9, 24, conv=CV_1TO16	# vmulps zmm12, zmm8, [r9+24]{1to16}
+	VMULPS zmm13, zmm9, r9, 24, conv=CV_1TO16	# vmulps zmm13, zmm9, [r9+24]{1to16}
+	VMULPS zmm14, zmm10, r9, 24, conv=CV_1TO16	# vmulps zmm14, zmm10, [r9+24]{1to16}
+	VMULPS zmm15, zmm11, r9, 24, conv=CV_1TO16	# vmulps zmm15, zmm11, [r9+24]{1to16}
+	VRNDFXPNTPS zmm12, zmm12, 1	# vrndfxpntps zmm12, zmm12, 1
+	VRNDFXPNTPS zmm13, zmm13, 1	# vrndfxpntps zmm13, zmm13, 1
+	VRNDFXPNTPS zmm14, zmm14, 1	# vrndfxpntps zmm14, zmm14, 1
+	VRNDFXPNTPS zmm15, zmm15, 1	# vrndfxpntps zmm15, zmm15, 1
+	VFNMADD231PS zmm8, zmm12, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm8, zmm12, [r9+0]{1to16}
+	VFNMADD231PS zmm9, zmm13, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm9, zmm13, [r9+0]{1to16}
+	VFNMADD231PS zmm10, zmm14, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm10, zmm14, [r9+0]{1to16}
+	VFNMADD231PS zmm11, zmm15, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm11, zmm15, [r9+0]{1to16}
+	VSUBPS zmm8, zmm8, r9, 44, conv=CV_1TO16	# vsubps zmm8, zmm8, [r9+44]{1to16}
+	VSUBPS zmm9, zmm9, r9, 44, conv=CV_1TO16	# vsubps zmm9, zmm9, [r9+44]{1to16}
+	VSUBPS zmm10, zmm10, r9, 44, conv=CV_1TO16	# vsubps zmm10, zmm10, [r9+44]{1to16}
+	VSUBPS zmm11, zmm11, r9, 44, conv=CV_1TO16	# vsubps zmm11, zmm11, [r9+44]{1to16}
+	VSUBPS zmm12, zmm12, r9, 44, conv=CV_1TO16	# vsubps zmm12, zmm12, [r9+44]{1to16}
+	VSUBPS zmm13, zmm13, r9, 44, conv=CV_1TO16	# vsubps zmm13, zmm13, [r9+44]{1to16}
+	VSUBPS zmm14, zmm14, r9, 44, conv=CV_1TO16	# vsubps zmm14, zmm14, [r9+44]{1to16}
+	VSUBPS zmm15, zmm15, r9, 44, conv=CV_1TO16	# vsubps zmm15, zmm15, [r9+44]{1to16}
+	VMULPS zmm8, zmm8, rcx, 0, conv=CV_1TO16	# vmulps zmm8, zmm8, [rcx+0]{1to16}
+	VMULPS zmm9, zmm9, rcx, 4, conv=CV_1TO16	# vmulps zmm9, zmm9, [rcx+4]{1to16}
+	VMULPS zmm10, zmm10, rcx, 8, conv=CV_1TO16	# vmulps zmm10, zmm10, [rcx+8]{1to16}
+	VMULPS zmm11, zmm11, rcx, 12, conv=CV_1TO16	# vmulps zmm11, zmm11, [rcx+12]{1to16}
+	VMULPS zmm12, zmm12, rcx, 0, conv=CV_1TO16	# vmulps zmm12, zmm12, [rcx+0]{1to16}
+	VMULPS zmm13, zmm13, rcx, 4, conv=CV_1TO16	# vmulps zmm13, zmm13, [rcx+4]{1to16}
+	VMULPS zmm14, zmm14, rcx, 8, conv=CV_1TO16	# vmulps zmm14, zmm14, [rcx+8]{1to16}
+	VMULPS zmm15, zmm15, rcx, 12, conv=CV_1TO16	# vmulps zmm15, zmm15, [rcx+12]{1to16}
+	VFMADD231PS zmm0, zmm8, rsi, 0, conv=CV_F16	# vfmadd231ps zmm0, zmm8, [rsi+0]{float16}
+	VFMADD231PS zmm1, zmm12, rsi, 32, conv=CV_F16	# vfmadd231ps zmm1, zmm12, [rsi+32]{float16}
+	VFMADD231PS zmm2, zmm9, rsi, 64, conv=CV_F16	# vfmadd231ps zmm2, zmm9, [rsi+64]{float16}
+	VFMADD231PS zmm3, zmm13, rsi, 96, conv=CV_F16	# vfmadd231ps zmm3, zmm13, [rsi+96]{float16}
+	VFMADD231PS zmm0, zmm10, rsi, 128, conv=CV_F16	# vfmadd231ps zmm0, zmm10, [rsi+128]{float16}
+	VFMADD231PS zmm1, zmm14, rsi, 160, conv=CV_F16	# vfmadd231ps zmm1, zmm14, [rsi+160]{float16}
+	VFMADD231PS zmm2, zmm11, rsi, 192, conv=CV_F16	# vfmadd231ps zmm2, zmm11, [rsi+192]{float16}
+	VFMADD231PS zmm3, zmm15, rsi, 224, conv=CV_F16	# vfmadd231ps zmm3, zmm15, [rsi+224]{float16}
+	VLOADUNPACKLPS zmm8, rdi, 74, conv=CV_U8	# vloadunpacklps zmm8, [rdi+74]{uint8}
+	VLOADUNPACKHPS zmm8, rdi, 138, conv=CV_U8	# vloadunpackhps zmm8, [rdi+138]{uint8}
+	VLOADUNPACKLPS zmm9, rdi, 92, conv=CV_U8	# vloadunpacklps zmm9, [rdi+92]{uint8}
+	VLOADUNPACKHPS zmm9, rdi, 156, conv=CV_U8	# vloadunpackhps zmm9, [rdi+156]{uint8}
+	VLOADUNPACKLPS zmm10, rdi, 110, conv=CV_U8	# vloadunpacklps zmm10, [rdi+110]{uint8}
+	VLOADUNPACKHPS zmm10, rdi, 174, conv=CV_U8	# vloadunpackhps zmm10, [rdi+174]{uint8}
+	VLOADUNPACKLPS zmm11, rdi, 128, conv=CV_U8	# vloadunpacklps zmm11, [rdi+128]{uint8}
+	VLOADUNPACKHPS zmm11, rdi, 192, conv=CV_U8	# vloadunpackhps zmm11, [rdi+192]{uint8}
+	VMULPS zmm12, zmm8, r9, 24, conv=CV_1TO16	# vmulps zmm12, zmm8, [r9+24]{1to16}
+	VMULPS zmm13, zmm9, r9, 24, conv=CV_1TO16	# vmulps zmm13, zmm9, [r9+24]{1to16}
+	VMULPS zmm14, zmm10, r9, 24, conv=CV_1TO16	# vmulps zmm14, zmm10, [r9+24]{1to16}
+	VMULPS zmm15, zmm11, r9, 24, conv=CV_1TO16	# vmulps zmm15, zmm11, [r9+24]{1to16}
+	VRNDFXPNTPS zmm12, zmm12, 1	# vrndfxpntps zmm12, zmm12, 1
+	VRNDFXPNTPS zmm13, zmm13, 1	# vrndfxpntps zmm13, zmm13, 1
+	VRNDFXPNTPS zmm14, zmm14, 1	# vrndfxpntps zmm14, zmm14, 1
+	VRNDFXPNTPS zmm15, zmm15, 1	# vrndfxpntps zmm15, zmm15, 1
+	VFNMADD231PS zmm8, zmm12, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm8, zmm12, [r9+0]{1to16}
+	VFNMADD231PS zmm9, zmm13, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm9, zmm13, [r9+0]{1to16}
+	VFNMADD231PS zmm10, zmm14, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm10, zmm14, [r9+0]{1to16}
+	VFNMADD231PS zmm11, zmm15, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm11, zmm15, [r9+0]{1to16}
+	VSUBPS zmm8, zmm8, r9, 44, conv=CV_1TO16	# vsubps zmm8, zmm8, [r9+44]{1to16}
+	VSUBPS zmm9, zmm9, r9, 44, conv=CV_1TO16	# vsubps zmm9, zmm9, [r9+44]{1to16}
+	VSUBPS zmm10, zmm10, r9, 44, conv=CV_1TO16	# vsubps zmm10, zmm10, [r9+44]{1to16}
+	VSUBPS zmm11, zmm11, r9, 44, conv=CV_1TO16	# vsubps zmm11, zmm11, [r9+44]{1to16}
+	VSUBPS zmm12, zmm12, r9, 44, conv=CV_1TO16	# vsubps zmm12, zmm12, [r9+44]{1to16}
+	VSUBPS zmm13, zmm13, r9, 44, conv=CV_1TO16	# vsubps zmm13, zmm13, [r9+44]{1to16}
+	VSUBPS zmm14, zmm14, r9, 44, conv=CV_1TO16	# vsubps zmm14, zmm14, [r9+44]{1to16}
+	VSUBPS zmm15, zmm15, r9, 44, conv=CV_1TO16	# vsubps zmm15, zmm15, [r9+44]{1to16}
+	VMULPS zmm8, zmm8, rcx, 16, conv=CV_1TO16	# vmulps zmm8, zmm8, [rcx+16]{1to16}
+	VMULPS zmm9, zmm9, rcx, 20, conv=CV_1TO16	# vmulps zmm9, zmm9, [rcx+20]{1to16}
+	VMULPS zmm10, zmm10, rcx, 24, conv=CV_1TO16	# vmulps zmm10, zmm10, [rcx+24]{1to16}
+	VMULPS zmm11, zmm11, rcx, 28, conv=CV_1TO16	# vmulps zmm11, zmm11, [rcx+28]{1to16}
+	VMULPS zmm12, zmm12, rcx, 16, conv=CV_1TO16	# vmulps zmm12, zmm12, [rcx+16]{1to16}
+	VMULPS zmm13, zmm13, rcx, 20, conv=CV_1TO16	# vmulps zmm13, zmm13, [rcx+20]{1to16}
+	VMULPS zmm14, zmm14, rcx, 24, conv=CV_1TO16	# vmulps zmm14, zmm14, [rcx+24]{1to16}
+	VMULPS zmm15, zmm15, rcx, 28, conv=CV_1TO16	# vmulps zmm15, zmm15, [rcx+28]{1to16}
+	VFMADD231PS zmm0, zmm8, rsi, 256, conv=CV_F16	# vfmadd231ps zmm0, zmm8, [rsi+256]{float16}
+	VFMADD231PS zmm1, zmm12, rsi, 288, conv=CV_F16	# vfmadd231ps zmm1, zmm12, [rsi+288]{float16}
+	VFMADD231PS zmm2, zmm9, rsi, 320, conv=CV_F16	# vfmadd231ps zmm2, zmm9, [rsi+320]{float16}
+	VFMADD231PS zmm3, zmm13, rsi, 352, conv=CV_F16	# vfmadd231ps zmm3, zmm13, [rsi+352]{float16}
+	VFMADD231PS zmm0, zmm10, rsi, 384, conv=CV_F16	# vfmadd231ps zmm0, zmm10, [rsi+384]{float16}
+	VFMADD231PS zmm1, zmm14, rsi, 416, conv=CV_F16	# vfmadd231ps zmm1, zmm14, [rsi+416]{float16}
+	VFMADD231PS zmm2, zmm11, rsi, 448, conv=CV_F16	# vfmadd231ps zmm2, zmm11, [rsi+448]{float16}
+	VFMADD231PS zmm3, zmm15, rsi, 480, conv=CV_F16	# vfmadd231ps zmm3, zmm15, [rsi+480]{float16}
+	VADDPS zmm0, zmm0, zmm1	# vaddps zmm0, zmm0, zmm1
+	VADDPS zmm2, zmm2, zmm3	# vaddps zmm2, zmm2, zmm3
+	VADDPS zmm0, zmm0, zmm2	# vaddps zmm0, zmm0, zmm2
+	VMOVAPS_ST r8, 0, zmm0	# vmovaps [r8+0], zmm0
+    ret
+    .size phi_q4_0_1h, .-phi_q4_0_1h
+
+# phi_q4_0_4h: eight Q4_0 blocks, against 4 activation row(s), float16
+    .globl phi_q4_0_4h
+    .type phi_q4_0_4h, @function
+phi_q4_0_4h:
+    mov 8(%rsp), %r11
+    lea (%rdi,%r11,2), %rax
+	VPREFETCH0 rax, 0	# vprefetch0 [rax+0]
+	VPREFETCH0 rax, 64	# vprefetch0 [rax+64]
+	VPREFETCH0 rax, 128	# vprefetch0 [rax+128]
+	VPREFETCH0 rax, 192	# vprefetch0 [rax+192]
+    lea (%rax,%r11,2), %rax
+	VPREFETCH1 rax, 0	# vprefetch1 [rax+0]
+	VPREFETCH1 rax, 64	# vprefetch1 [rax+64]
+	VPREFETCH1 rax, 128	# vprefetch1 [rax+128]
+	VPREFETCH1 rax, 192	# vprefetch1 [rax+192]
+	VPXORD zmm16, zmm16, zmm16	# vpxord zmm16, zmm16, zmm16
+    mov $1, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 0, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+0]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 64, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+64]{float16}
+    mov $2, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 18, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+18]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 82, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+82]{float16}
+    mov $4, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 36, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+36]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 100, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+100]{float16}
+    mov $8, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 54, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+54]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 118, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+118]{float16}
+    mov $16, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 72, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+72]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 136, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+136]{float16}
+    mov $32, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 90, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+90]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 154, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+154]{float16}
+    mov $64, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 108, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+108]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 172, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+172]{float16}
+    mov $128, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 126, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+126]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 190, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+190]{float16}
+	VMOVAPS_ST rcx, 0, zmm16	# vmovaps [rcx+0], zmm16
+    mov 8(%rdx), %r10
+    mov 16(%rdx), %r11
+    mov 24(%rdx), %rax
+	VMOVAPS zmm0, r8, 0	# vmovaps zmm0, [r8+0]
+	VMOVAPS zmm1, r8, 64	# vmovaps zmm1, [r8+64]
+	VMOVAPS zmm2, r8, 128	# vmovaps zmm2, [r8+128]
+	VMOVAPS zmm3, r8, 192	# vmovaps zmm3, [r8+192]
+	VLOADUNPACKLPS zmm8, rdi, 2, conv=CV_U8	# vloadunpacklps zmm8, [rdi+2]{uint8}
+	VLOADUNPACKHPS zmm8, rdi, 66, conv=CV_U8	# vloadunpackhps zmm8, [rdi+66]{uint8}
+	VLOADUNPACKLPS zmm9, rdi, 20, conv=CV_U8	# vloadunpacklps zmm9, [rdi+20]{uint8}
+	VLOADUNPACKHPS zmm9, rdi, 84, conv=CV_U8	# vloadunpackhps zmm9, [rdi+84]{uint8}
+	VLOADUNPACKLPS zmm10, rdi, 38, conv=CV_U8	# vloadunpacklps zmm10, [rdi+38]{uint8}
+	VLOADUNPACKHPS zmm10, rdi, 102, conv=CV_U8	# vloadunpackhps zmm10, [rdi+102]{uint8}
+	VLOADUNPACKLPS zmm11, rdi, 56, conv=CV_U8	# vloadunpacklps zmm11, [rdi+56]{uint8}
+	VLOADUNPACKHPS zmm11, rdi, 120, conv=CV_U8	# vloadunpackhps zmm11, [rdi+120]{uint8}
+	VMULPS zmm12, zmm8, r9, 24, conv=CV_1TO16	# vmulps zmm12, zmm8, [r9+24]{1to16}
+	VMULPS zmm13, zmm9, r9, 24, conv=CV_1TO16	# vmulps zmm13, zmm9, [r9+24]{1to16}
+	VMULPS zmm14, zmm10, r9, 24, conv=CV_1TO16	# vmulps zmm14, zmm10, [r9+24]{1to16}
+	VMULPS zmm15, zmm11, r9, 24, conv=CV_1TO16	# vmulps zmm15, zmm11, [r9+24]{1to16}
+	VRNDFXPNTPS zmm12, zmm12, 1	# vrndfxpntps zmm12, zmm12, 1
+	VRNDFXPNTPS zmm13, zmm13, 1	# vrndfxpntps zmm13, zmm13, 1
+	VRNDFXPNTPS zmm14, zmm14, 1	# vrndfxpntps zmm14, zmm14, 1
+	VRNDFXPNTPS zmm15, zmm15, 1	# vrndfxpntps zmm15, zmm15, 1
+	VFNMADD231PS zmm8, zmm12, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm8, zmm12, [r9+0]{1to16}
+	VFNMADD231PS zmm9, zmm13, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm9, zmm13, [r9+0]{1to16}
+	VFNMADD231PS zmm10, zmm14, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm10, zmm14, [r9+0]{1to16}
+	VFNMADD231PS zmm11, zmm15, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm11, zmm15, [r9+0]{1to16}
+	VSUBPS zmm8, zmm8, r9, 44, conv=CV_1TO16	# vsubps zmm8, zmm8, [r9+44]{1to16}
+	VSUBPS zmm9, zmm9, r9, 44, conv=CV_1TO16	# vsubps zmm9, zmm9, [r9+44]{1to16}
+	VSUBPS zmm10, zmm10, r9, 44, conv=CV_1TO16	# vsubps zmm10, zmm10, [r9+44]{1to16}
+	VSUBPS zmm11, zmm11, r9, 44, conv=CV_1TO16	# vsubps zmm11, zmm11, [r9+44]{1to16}
+	VSUBPS zmm12, zmm12, r9, 44, conv=CV_1TO16	# vsubps zmm12, zmm12, [r9+44]{1to16}
+	VSUBPS zmm13, zmm13, r9, 44, conv=CV_1TO16	# vsubps zmm13, zmm13, [r9+44]{1to16}
+	VSUBPS zmm14, zmm14, r9, 44, conv=CV_1TO16	# vsubps zmm14, zmm14, [r9+44]{1to16}
+	VSUBPS zmm15, zmm15, r9, 44, conv=CV_1TO16	# vsubps zmm15, zmm15, [r9+44]{1to16}
+	VMULPS zmm8, zmm8, rcx, 0, conv=CV_1TO16	# vmulps zmm8, zmm8, [rcx+0]{1to16}
+	VMULPS zmm9, zmm9, rcx, 4, conv=CV_1TO16	# vmulps zmm9, zmm9, [rcx+4]{1to16}
+	VMULPS zmm10, zmm10, rcx, 8, conv=CV_1TO16	# vmulps zmm10, zmm10, [rcx+8]{1to16}
+	VMULPS zmm11, zmm11, rcx, 12, conv=CV_1TO16	# vmulps zmm11, zmm11, [rcx+12]{1to16}
+	VMULPS zmm12, zmm12, rcx, 0, conv=CV_1TO16	# vmulps zmm12, zmm12, [rcx+0]{1to16}
+	VMULPS zmm13, zmm13, rcx, 4, conv=CV_1TO16	# vmulps zmm13, zmm13, [rcx+4]{1to16}
+	VMULPS zmm14, zmm14, rcx, 8, conv=CV_1TO16	# vmulps zmm14, zmm14, [rcx+8]{1to16}
+	VMULPS zmm15, zmm15, rcx, 12, conv=CV_1TO16	# vmulps zmm15, zmm15, [rcx+12]{1to16}
+	VFMADD231PS zmm0, zmm8, rsi, 0, conv=CV_F16	# vfmadd231ps zmm0, zmm8, [rsi+0]{float16}
+	VFMADD231PS zmm1, zmm8, r10, 0, conv=CV_F16	# vfmadd231ps zmm1, zmm8, [r10+0]{float16}
+	VFMADD231PS zmm2, zmm8, r11, 0, conv=CV_F16	# vfmadd231ps zmm2, zmm8, [r11+0]{float16}
+	VFMADD231PS zmm3, zmm8, rax, 0, conv=CV_F16	# vfmadd231ps zmm3, zmm8, [rax+0]{float16}
+	VFMADD231PS zmm0, zmm12, rsi, 32, conv=CV_F16	# vfmadd231ps zmm0, zmm12, [rsi+32]{float16}
+	VFMADD231PS zmm1, zmm12, r10, 32, conv=CV_F16	# vfmadd231ps zmm1, zmm12, [r10+32]{float16}
+	VFMADD231PS zmm2, zmm12, r11, 32, conv=CV_F16	# vfmadd231ps zmm2, zmm12, [r11+32]{float16}
+	VFMADD231PS zmm3, zmm12, rax, 32, conv=CV_F16	# vfmadd231ps zmm3, zmm12, [rax+32]{float16}
+	VFMADD231PS zmm0, zmm9, rsi, 64, conv=CV_F16	# vfmadd231ps zmm0, zmm9, [rsi+64]{float16}
+	VFMADD231PS zmm1, zmm9, r10, 64, conv=CV_F16	# vfmadd231ps zmm1, zmm9, [r10+64]{float16}
+	VFMADD231PS zmm2, zmm9, r11, 64, conv=CV_F16	# vfmadd231ps zmm2, zmm9, [r11+64]{float16}
+	VFMADD231PS zmm3, zmm9, rax, 64, conv=CV_F16	# vfmadd231ps zmm3, zmm9, [rax+64]{float16}
+	VFMADD231PS zmm0, zmm13, rsi, 96, conv=CV_F16	# vfmadd231ps zmm0, zmm13, [rsi+96]{float16}
+	VFMADD231PS zmm1, zmm13, r10, 96, conv=CV_F16	# vfmadd231ps zmm1, zmm13, [r10+96]{float16}
+	VFMADD231PS zmm2, zmm13, r11, 96, conv=CV_F16	# vfmadd231ps zmm2, zmm13, [r11+96]{float16}
+	VFMADD231PS zmm3, zmm13, rax, 96, conv=CV_F16	# vfmadd231ps zmm3, zmm13, [rax+96]{float16}
+	VFMADD231PS zmm0, zmm10, rsi, 128, conv=CV_F16	# vfmadd231ps zmm0, zmm10, [rsi+128]{float16}
+	VFMADD231PS zmm1, zmm10, r10, 128, conv=CV_F16	# vfmadd231ps zmm1, zmm10, [r10+128]{float16}
+	VFMADD231PS zmm2, zmm10, r11, 128, conv=CV_F16	# vfmadd231ps zmm2, zmm10, [r11+128]{float16}
+	VFMADD231PS zmm3, zmm10, rax, 128, conv=CV_F16	# vfmadd231ps zmm3, zmm10, [rax+128]{float16}
+	VFMADD231PS zmm0, zmm14, rsi, 160, conv=CV_F16	# vfmadd231ps zmm0, zmm14, [rsi+160]{float16}
+	VFMADD231PS zmm1, zmm14, r10, 160, conv=CV_F16	# vfmadd231ps zmm1, zmm14, [r10+160]{float16}
+	VFMADD231PS zmm2, zmm14, r11, 160, conv=CV_F16	# vfmadd231ps zmm2, zmm14, [r11+160]{float16}
+	VFMADD231PS zmm3, zmm14, rax, 160, conv=CV_F16	# vfmadd231ps zmm3, zmm14, [rax+160]{float16}
+	VFMADD231PS zmm0, zmm11, rsi, 192, conv=CV_F16	# vfmadd231ps zmm0, zmm11, [rsi+192]{float16}
+	VFMADD231PS zmm1, zmm11, r10, 192, conv=CV_F16	# vfmadd231ps zmm1, zmm11, [r10+192]{float16}
+	VFMADD231PS zmm2, zmm11, r11, 192, conv=CV_F16	# vfmadd231ps zmm2, zmm11, [r11+192]{float16}
+	VFMADD231PS zmm3, zmm11, rax, 192, conv=CV_F16	# vfmadd231ps zmm3, zmm11, [rax+192]{float16}
+	VFMADD231PS zmm0, zmm15, rsi, 224, conv=CV_F16	# vfmadd231ps zmm0, zmm15, [rsi+224]{float16}
+	VFMADD231PS zmm1, zmm15, r10, 224, conv=CV_F16	# vfmadd231ps zmm1, zmm15, [r10+224]{float16}
+	VFMADD231PS zmm2, zmm15, r11, 224, conv=CV_F16	# vfmadd231ps zmm2, zmm15, [r11+224]{float16}
+	VFMADD231PS zmm3, zmm15, rax, 224, conv=CV_F16	# vfmadd231ps zmm3, zmm15, [rax+224]{float16}
+	VLOADUNPACKLPS zmm8, rdi, 74, conv=CV_U8	# vloadunpacklps zmm8, [rdi+74]{uint8}
+	VLOADUNPACKHPS zmm8, rdi, 138, conv=CV_U8	# vloadunpackhps zmm8, [rdi+138]{uint8}
+	VLOADUNPACKLPS zmm9, rdi, 92, conv=CV_U8	# vloadunpacklps zmm9, [rdi+92]{uint8}
+	VLOADUNPACKHPS zmm9, rdi, 156, conv=CV_U8	# vloadunpackhps zmm9, [rdi+156]{uint8}
+	VLOADUNPACKLPS zmm10, rdi, 110, conv=CV_U8	# vloadunpacklps zmm10, [rdi+110]{uint8}
+	VLOADUNPACKHPS zmm10, rdi, 174, conv=CV_U8	# vloadunpackhps zmm10, [rdi+174]{uint8}
+	VLOADUNPACKLPS zmm11, rdi, 128, conv=CV_U8	# vloadunpacklps zmm11, [rdi+128]{uint8}
+	VLOADUNPACKHPS zmm11, rdi, 192, conv=CV_U8	# vloadunpackhps zmm11, [rdi+192]{uint8}
+	VMULPS zmm12, zmm8, r9, 24, conv=CV_1TO16	# vmulps zmm12, zmm8, [r9+24]{1to16}
+	VMULPS zmm13, zmm9, r9, 24, conv=CV_1TO16	# vmulps zmm13, zmm9, [r9+24]{1to16}
+	VMULPS zmm14, zmm10, r9, 24, conv=CV_1TO16	# vmulps zmm14, zmm10, [r9+24]{1to16}
+	VMULPS zmm15, zmm11, r9, 24, conv=CV_1TO16	# vmulps zmm15, zmm11, [r9+24]{1to16}
+	VRNDFXPNTPS zmm12, zmm12, 1	# vrndfxpntps zmm12, zmm12, 1
+	VRNDFXPNTPS zmm13, zmm13, 1	# vrndfxpntps zmm13, zmm13, 1
+	VRNDFXPNTPS zmm14, zmm14, 1	# vrndfxpntps zmm14, zmm14, 1
+	VRNDFXPNTPS zmm15, zmm15, 1	# vrndfxpntps zmm15, zmm15, 1
+	VFNMADD231PS zmm8, zmm12, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm8, zmm12, [r9+0]{1to16}
+	VFNMADD231PS zmm9, zmm13, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm9, zmm13, [r9+0]{1to16}
+	VFNMADD231PS zmm10, zmm14, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm10, zmm14, [r9+0]{1to16}
+	VFNMADD231PS zmm11, zmm15, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm11, zmm15, [r9+0]{1to16}
+	VSUBPS zmm8, zmm8, r9, 44, conv=CV_1TO16	# vsubps zmm8, zmm8, [r9+44]{1to16}
+	VSUBPS zmm9, zmm9, r9, 44, conv=CV_1TO16	# vsubps zmm9, zmm9, [r9+44]{1to16}
+	VSUBPS zmm10, zmm10, r9, 44, conv=CV_1TO16	# vsubps zmm10, zmm10, [r9+44]{1to16}
+	VSUBPS zmm11, zmm11, r9, 44, conv=CV_1TO16	# vsubps zmm11, zmm11, [r9+44]{1to16}
+	VSUBPS zmm12, zmm12, r9, 44, conv=CV_1TO16	# vsubps zmm12, zmm12, [r9+44]{1to16}
+	VSUBPS zmm13, zmm13, r9, 44, conv=CV_1TO16	# vsubps zmm13, zmm13, [r9+44]{1to16}
+	VSUBPS zmm14, zmm14, r9, 44, conv=CV_1TO16	# vsubps zmm14, zmm14, [r9+44]{1to16}
+	VSUBPS zmm15, zmm15, r9, 44, conv=CV_1TO16	# vsubps zmm15, zmm15, [r9+44]{1to16}
+	VMULPS zmm8, zmm8, rcx, 16, conv=CV_1TO16	# vmulps zmm8, zmm8, [rcx+16]{1to16}
+	VMULPS zmm9, zmm9, rcx, 20, conv=CV_1TO16	# vmulps zmm9, zmm9, [rcx+20]{1to16}
+	VMULPS zmm10, zmm10, rcx, 24, conv=CV_1TO16	# vmulps zmm10, zmm10, [rcx+24]{1to16}
+	VMULPS zmm11, zmm11, rcx, 28, conv=CV_1TO16	# vmulps zmm11, zmm11, [rcx+28]{1to16}
+	VMULPS zmm12, zmm12, rcx, 16, conv=CV_1TO16	# vmulps zmm12, zmm12, [rcx+16]{1to16}
+	VMULPS zmm13, zmm13, rcx, 20, conv=CV_1TO16	# vmulps zmm13, zmm13, [rcx+20]{1to16}
+	VMULPS zmm14, zmm14, rcx, 24, conv=CV_1TO16	# vmulps zmm14, zmm14, [rcx+24]{1to16}
+	VMULPS zmm15, zmm15, rcx, 28, conv=CV_1TO16	# vmulps zmm15, zmm15, [rcx+28]{1to16}
+	VFMADD231PS zmm0, zmm8, rsi, 256, conv=CV_F16	# vfmadd231ps zmm0, zmm8, [rsi+256]{float16}
+	VFMADD231PS zmm1, zmm8, r10, 256, conv=CV_F16	# vfmadd231ps zmm1, zmm8, [r10+256]{float16}
+	VFMADD231PS zmm2, zmm8, r11, 256, conv=CV_F16	# vfmadd231ps zmm2, zmm8, [r11+256]{float16}
+	VFMADD231PS zmm3, zmm8, rax, 256, conv=CV_F16	# vfmadd231ps zmm3, zmm8, [rax+256]{float16}
+	VFMADD231PS zmm0, zmm12, rsi, 288, conv=CV_F16	# vfmadd231ps zmm0, zmm12, [rsi+288]{float16}
+	VFMADD231PS zmm1, zmm12, r10, 288, conv=CV_F16	# vfmadd231ps zmm1, zmm12, [r10+288]{float16}
+	VFMADD231PS zmm2, zmm12, r11, 288, conv=CV_F16	# vfmadd231ps zmm2, zmm12, [r11+288]{float16}
+	VFMADD231PS zmm3, zmm12, rax, 288, conv=CV_F16	# vfmadd231ps zmm3, zmm12, [rax+288]{float16}
+	VFMADD231PS zmm0, zmm9, rsi, 320, conv=CV_F16	# vfmadd231ps zmm0, zmm9, [rsi+320]{float16}
+	VFMADD231PS zmm1, zmm9, r10, 320, conv=CV_F16	# vfmadd231ps zmm1, zmm9, [r10+320]{float16}
+	VFMADD231PS zmm2, zmm9, r11, 320, conv=CV_F16	# vfmadd231ps zmm2, zmm9, [r11+320]{float16}
+	VFMADD231PS zmm3, zmm9, rax, 320, conv=CV_F16	# vfmadd231ps zmm3, zmm9, [rax+320]{float16}
+	VFMADD231PS zmm0, zmm13, rsi, 352, conv=CV_F16	# vfmadd231ps zmm0, zmm13, [rsi+352]{float16}
+	VFMADD231PS zmm1, zmm13, r10, 352, conv=CV_F16	# vfmadd231ps zmm1, zmm13, [r10+352]{float16}
+	VFMADD231PS zmm2, zmm13, r11, 352, conv=CV_F16	# vfmadd231ps zmm2, zmm13, [r11+352]{float16}
+	VFMADD231PS zmm3, zmm13, rax, 352, conv=CV_F16	# vfmadd231ps zmm3, zmm13, [rax+352]{float16}
+	VFMADD231PS zmm0, zmm10, rsi, 384, conv=CV_F16	# vfmadd231ps zmm0, zmm10, [rsi+384]{float16}
+	VFMADD231PS zmm1, zmm10, r10, 384, conv=CV_F16	# vfmadd231ps zmm1, zmm10, [r10+384]{float16}
+	VFMADD231PS zmm2, zmm10, r11, 384, conv=CV_F16	# vfmadd231ps zmm2, zmm10, [r11+384]{float16}
+	VFMADD231PS zmm3, zmm10, rax, 384, conv=CV_F16	# vfmadd231ps zmm3, zmm10, [rax+384]{float16}
+	VFMADD231PS zmm0, zmm14, rsi, 416, conv=CV_F16	# vfmadd231ps zmm0, zmm14, [rsi+416]{float16}
+	VFMADD231PS zmm1, zmm14, r10, 416, conv=CV_F16	# vfmadd231ps zmm1, zmm14, [r10+416]{float16}
+	VFMADD231PS zmm2, zmm14, r11, 416, conv=CV_F16	# vfmadd231ps zmm2, zmm14, [r11+416]{float16}
+	VFMADD231PS zmm3, zmm14, rax, 416, conv=CV_F16	# vfmadd231ps zmm3, zmm14, [rax+416]{float16}
+	VFMADD231PS zmm0, zmm11, rsi, 448, conv=CV_F16	# vfmadd231ps zmm0, zmm11, [rsi+448]{float16}
+	VFMADD231PS zmm1, zmm11, r10, 448, conv=CV_F16	# vfmadd231ps zmm1, zmm11, [r10+448]{float16}
+	VFMADD231PS zmm2, zmm11, r11, 448, conv=CV_F16	# vfmadd231ps zmm2, zmm11, [r11+448]{float16}
+	VFMADD231PS zmm3, zmm11, rax, 448, conv=CV_F16	# vfmadd231ps zmm3, zmm11, [rax+448]{float16}
+	VFMADD231PS zmm0, zmm15, rsi, 480, conv=CV_F16	# vfmadd231ps zmm0, zmm15, [rsi+480]{float16}
+	VFMADD231PS zmm1, zmm15, r10, 480, conv=CV_F16	# vfmadd231ps zmm1, zmm15, [r10+480]{float16}
+	VFMADD231PS zmm2, zmm15, r11, 480, conv=CV_F16	# vfmadd231ps zmm2, zmm15, [r11+480]{float16}
+	VFMADD231PS zmm3, zmm15, rax, 480, conv=CV_F16	# vfmadd231ps zmm3, zmm15, [rax+480]{float16}
+	VMOVAPS_ST r8, 0, zmm0	# vmovaps [r8+0], zmm0
+	VMOVAPS_ST r8, 64, zmm1	# vmovaps [r8+64], zmm1
+	VMOVAPS_ST r8, 128, zmm2	# vmovaps [r8+128], zmm2
+	VMOVAPS_ST r8, 192, zmm3	# vmovaps [r8+192], zmm3
+    ret
+    .size phi_q4_0_4h, .-phi_q4_0_4h
+
+# phi_q4_0_8h: eight Q4_0 blocks, against 8 activation row(s), float16
+    .globl phi_q4_0_8h
+    .type phi_q4_0_8h, @function
+phi_q4_0_8h:
+    mov 8(%rsp), %r11
+    lea (%rdi,%r11,2), %rax
+	VPREFETCH0 rax, 0	# vprefetch0 [rax+0]
+	VPREFETCH0 rax, 64	# vprefetch0 [rax+64]
+	VPREFETCH0 rax, 128	# vprefetch0 [rax+128]
+	VPREFETCH0 rax, 192	# vprefetch0 [rax+192]
+    lea (%rax,%r11,2), %rax
+	VPREFETCH1 rax, 0	# vprefetch1 [rax+0]
+	VPREFETCH1 rax, 64	# vprefetch1 [rax+64]
+	VPREFETCH1 rax, 128	# vprefetch1 [rax+128]
+	VPREFETCH1 rax, 192	# vprefetch1 [rax+192]
+    push %rbx
+    push %r13
+    push %r14
+    push %r15
+	VPXORD zmm16, zmm16, zmm16	# vpxord zmm16, zmm16, zmm16
+    mov $1, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 0, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+0]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 64, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+64]{float16}
+    mov $2, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 18, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+18]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 82, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+82]{float16}
+    mov $4, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 36, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+36]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 100, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+100]{float16}
+    mov $8, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 54, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+54]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 118, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+118]{float16}
+    mov $16, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 72, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+72]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 136, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+136]{float16}
+    mov $32, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 90, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+90]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 154, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+154]{float16}
+    mov $64, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 108, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+108]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 172, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+172]{float16}
+    mov $128, %eax
+	KMOV_KR k1, eax	# kmov k1, eax
+	VLOADUNPACKLPS zmm16, rdi, 126, conv=CV_F16, k=k1	# vloadunpacklps zmm16 {k1}, [rdi+126]{float16}
+	VLOADUNPACKHPS zmm16, rdi, 190, conv=CV_F16, k=k1	# vloadunpackhps zmm16 {k1}, [rdi+190]{float16}
+	VMOVAPS_ST rcx, 0, zmm16	# vmovaps [rcx+0], zmm16
+    mov 8(%rdx), %r10
+    mov 16(%rdx), %r11
+    mov 24(%rdx), %rax
+    mov 32(%rdx), %rbx
+    mov 40(%rdx), %r13
+    mov 48(%rdx), %r14
+    mov 56(%rdx), %r15
+	VMOVAPS zmm0, r8, 0	# vmovaps zmm0, [r8+0]
+	VMOVAPS zmm1, r8, 64	# vmovaps zmm1, [r8+64]
+	VMOVAPS zmm2, r8, 128	# vmovaps zmm2, [r8+128]
+	VMOVAPS zmm3, r8, 192	# vmovaps zmm3, [r8+192]
+	VMOVAPS zmm4, r8, 256	# vmovaps zmm4, [r8+256]
+	VMOVAPS zmm5, r8, 320	# vmovaps zmm5, [r8+320]
+	VMOVAPS zmm6, r8, 384	# vmovaps zmm6, [r8+384]
+	VMOVAPS zmm7, r8, 448	# vmovaps zmm7, [r8+448]
+	VLOADUNPACKLPS zmm8, rdi, 2, conv=CV_U8	# vloadunpacklps zmm8, [rdi+2]{uint8}
+	VLOADUNPACKHPS zmm8, rdi, 66, conv=CV_U8	# vloadunpackhps zmm8, [rdi+66]{uint8}
+	VLOADUNPACKLPS zmm9, rdi, 20, conv=CV_U8	# vloadunpacklps zmm9, [rdi+20]{uint8}
+	VLOADUNPACKHPS zmm9, rdi, 84, conv=CV_U8	# vloadunpackhps zmm9, [rdi+84]{uint8}
+	VLOADUNPACKLPS zmm10, rdi, 38, conv=CV_U8	# vloadunpacklps zmm10, [rdi+38]{uint8}
+	VLOADUNPACKHPS zmm10, rdi, 102, conv=CV_U8	# vloadunpackhps zmm10, [rdi+102]{uint8}
+	VLOADUNPACKLPS zmm11, rdi, 56, conv=CV_U8	# vloadunpacklps zmm11, [rdi+56]{uint8}
+	VLOADUNPACKHPS zmm11, rdi, 120, conv=CV_U8	# vloadunpackhps zmm11, [rdi+120]{uint8}
+	VMULPS zmm12, zmm8, r9, 24, conv=CV_1TO16	# vmulps zmm12, zmm8, [r9+24]{1to16}
+	VMULPS zmm13, zmm9, r9, 24, conv=CV_1TO16	# vmulps zmm13, zmm9, [r9+24]{1to16}
+	VMULPS zmm14, zmm10, r9, 24, conv=CV_1TO16	# vmulps zmm14, zmm10, [r9+24]{1to16}
+	VMULPS zmm15, zmm11, r9, 24, conv=CV_1TO16	# vmulps zmm15, zmm11, [r9+24]{1to16}
+	VRNDFXPNTPS zmm12, zmm12, 1	# vrndfxpntps zmm12, zmm12, 1
+	VRNDFXPNTPS zmm13, zmm13, 1	# vrndfxpntps zmm13, zmm13, 1
+	VRNDFXPNTPS zmm14, zmm14, 1	# vrndfxpntps zmm14, zmm14, 1
+	VRNDFXPNTPS zmm15, zmm15, 1	# vrndfxpntps zmm15, zmm15, 1
+	VFNMADD231PS zmm8, zmm12, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm8, zmm12, [r9+0]{1to16}
+	VFNMADD231PS zmm9, zmm13, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm9, zmm13, [r9+0]{1to16}
+	VFNMADD231PS zmm10, zmm14, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm10, zmm14, [r9+0]{1to16}
+	VFNMADD231PS zmm11, zmm15, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm11, zmm15, [r9+0]{1to16}
+	VSUBPS zmm8, zmm8, r9, 44, conv=CV_1TO16	# vsubps zmm8, zmm8, [r9+44]{1to16}
+	VSUBPS zmm9, zmm9, r9, 44, conv=CV_1TO16	# vsubps zmm9, zmm9, [r9+44]{1to16}
+	VSUBPS zmm10, zmm10, r9, 44, conv=CV_1TO16	# vsubps zmm10, zmm10, [r9+44]{1to16}
+	VSUBPS zmm11, zmm11, r9, 44, conv=CV_1TO16	# vsubps zmm11, zmm11, [r9+44]{1to16}
+	VSUBPS zmm12, zmm12, r9, 44, conv=CV_1TO16	# vsubps zmm12, zmm12, [r9+44]{1to16}
+	VSUBPS zmm13, zmm13, r9, 44, conv=CV_1TO16	# vsubps zmm13, zmm13, [r9+44]{1to16}
+	VSUBPS zmm14, zmm14, r9, 44, conv=CV_1TO16	# vsubps zmm14, zmm14, [r9+44]{1to16}
+	VSUBPS zmm15, zmm15, r9, 44, conv=CV_1TO16	# vsubps zmm15, zmm15, [r9+44]{1to16}
+	VMULPS zmm8, zmm8, rcx, 0, conv=CV_1TO16	# vmulps zmm8, zmm8, [rcx+0]{1to16}
+	VMULPS zmm9, zmm9, rcx, 4, conv=CV_1TO16	# vmulps zmm9, zmm9, [rcx+4]{1to16}
+	VMULPS zmm10, zmm10, rcx, 8, conv=CV_1TO16	# vmulps zmm10, zmm10, [rcx+8]{1to16}
+	VMULPS zmm11, zmm11, rcx, 12, conv=CV_1TO16	# vmulps zmm11, zmm11, [rcx+12]{1to16}
+	VMULPS zmm12, zmm12, rcx, 0, conv=CV_1TO16	# vmulps zmm12, zmm12, [rcx+0]{1to16}
+	VMULPS zmm13, zmm13, rcx, 4, conv=CV_1TO16	# vmulps zmm13, zmm13, [rcx+4]{1to16}
+	VMULPS zmm14, zmm14, rcx, 8, conv=CV_1TO16	# vmulps zmm14, zmm14, [rcx+8]{1to16}
+	VMULPS zmm15, zmm15, rcx, 12, conv=CV_1TO16	# vmulps zmm15, zmm15, [rcx+12]{1to16}
+	VFMADD231PS zmm0, zmm8, rsi, 0, conv=CV_F16	# vfmadd231ps zmm0, zmm8, [rsi+0]{float16}
+	VFMADD231PS zmm1, zmm8, r10, 0, conv=CV_F16	# vfmadd231ps zmm1, zmm8, [r10+0]{float16}
+	VFMADD231PS zmm2, zmm8, r11, 0, conv=CV_F16	# vfmadd231ps zmm2, zmm8, [r11+0]{float16}
+	VFMADD231PS zmm3, zmm8, rax, 0, conv=CV_F16	# vfmadd231ps zmm3, zmm8, [rax+0]{float16}
+	VFMADD231PS zmm4, zmm8, rbx, 0, conv=CV_F16	# vfmadd231ps zmm4, zmm8, [rbx+0]{float16}
+	VFMADD231PS zmm5, zmm8, r13, 0, conv=CV_F16	# vfmadd231ps zmm5, zmm8, [r13+0]{float16}
+	VFMADD231PS zmm6, zmm8, r14, 0, conv=CV_F16	# vfmadd231ps zmm6, zmm8, [r14+0]{float16}
+	VFMADD231PS zmm7, zmm8, r15, 0, conv=CV_F16	# vfmadd231ps zmm7, zmm8, [r15+0]{float16}
+	VFMADD231PS zmm0, zmm12, rsi, 32, conv=CV_F16	# vfmadd231ps zmm0, zmm12, [rsi+32]{float16}
+	VFMADD231PS zmm1, zmm12, r10, 32, conv=CV_F16	# vfmadd231ps zmm1, zmm12, [r10+32]{float16}
+	VFMADD231PS zmm2, zmm12, r11, 32, conv=CV_F16	# vfmadd231ps zmm2, zmm12, [r11+32]{float16}
+	VFMADD231PS zmm3, zmm12, rax, 32, conv=CV_F16	# vfmadd231ps zmm3, zmm12, [rax+32]{float16}
+	VFMADD231PS zmm4, zmm12, rbx, 32, conv=CV_F16	# vfmadd231ps zmm4, zmm12, [rbx+32]{float16}
+	VFMADD231PS zmm5, zmm12, r13, 32, conv=CV_F16	# vfmadd231ps zmm5, zmm12, [r13+32]{float16}
+	VFMADD231PS zmm6, zmm12, r14, 32, conv=CV_F16	# vfmadd231ps zmm6, zmm12, [r14+32]{float16}
+	VFMADD231PS zmm7, zmm12, r15, 32, conv=CV_F16	# vfmadd231ps zmm7, zmm12, [r15+32]{float16}
+	VFMADD231PS zmm0, zmm9, rsi, 64, conv=CV_F16	# vfmadd231ps zmm0, zmm9, [rsi+64]{float16}
+	VFMADD231PS zmm1, zmm9, r10, 64, conv=CV_F16	# vfmadd231ps zmm1, zmm9, [r10+64]{float16}
+	VFMADD231PS zmm2, zmm9, r11, 64, conv=CV_F16	# vfmadd231ps zmm2, zmm9, [r11+64]{float16}
+	VFMADD231PS zmm3, zmm9, rax, 64, conv=CV_F16	# vfmadd231ps zmm3, zmm9, [rax+64]{float16}
+	VFMADD231PS zmm4, zmm9, rbx, 64, conv=CV_F16	# vfmadd231ps zmm4, zmm9, [rbx+64]{float16}
+	VFMADD231PS zmm5, zmm9, r13, 64, conv=CV_F16	# vfmadd231ps zmm5, zmm9, [r13+64]{float16}
+	VFMADD231PS zmm6, zmm9, r14, 64, conv=CV_F16	# vfmadd231ps zmm6, zmm9, [r14+64]{float16}
+	VFMADD231PS zmm7, zmm9, r15, 64, conv=CV_F16	# vfmadd231ps zmm7, zmm9, [r15+64]{float16}
+	VFMADD231PS zmm0, zmm13, rsi, 96, conv=CV_F16	# vfmadd231ps zmm0, zmm13, [rsi+96]{float16}
+	VFMADD231PS zmm1, zmm13, r10, 96, conv=CV_F16	# vfmadd231ps zmm1, zmm13, [r10+96]{float16}
+	VFMADD231PS zmm2, zmm13, r11, 96, conv=CV_F16	# vfmadd231ps zmm2, zmm13, [r11+96]{float16}
+	VFMADD231PS zmm3, zmm13, rax, 96, conv=CV_F16	# vfmadd231ps zmm3, zmm13, [rax+96]{float16}
+	VFMADD231PS zmm4, zmm13, rbx, 96, conv=CV_F16	# vfmadd231ps zmm4, zmm13, [rbx+96]{float16}
+	VFMADD231PS zmm5, zmm13, r13, 96, conv=CV_F16	# vfmadd231ps zmm5, zmm13, [r13+96]{float16}
+	VFMADD231PS zmm6, zmm13, r14, 96, conv=CV_F16	# vfmadd231ps zmm6, zmm13, [r14+96]{float16}
+	VFMADD231PS zmm7, zmm13, r15, 96, conv=CV_F16	# vfmadd231ps zmm7, zmm13, [r15+96]{float16}
+	VFMADD231PS zmm0, zmm10, rsi, 128, conv=CV_F16	# vfmadd231ps zmm0, zmm10, [rsi+128]{float16}
+	VFMADD231PS zmm1, zmm10, r10, 128, conv=CV_F16	# vfmadd231ps zmm1, zmm10, [r10+128]{float16}
+	VFMADD231PS zmm2, zmm10, r11, 128, conv=CV_F16	# vfmadd231ps zmm2, zmm10, [r11+128]{float16}
+	VFMADD231PS zmm3, zmm10, rax, 128, conv=CV_F16	# vfmadd231ps zmm3, zmm10, [rax+128]{float16}
+	VFMADD231PS zmm4, zmm10, rbx, 128, conv=CV_F16	# vfmadd231ps zmm4, zmm10, [rbx+128]{float16}
+	VFMADD231PS zmm5, zmm10, r13, 128, conv=CV_F16	# vfmadd231ps zmm5, zmm10, [r13+128]{float16}
+	VFMADD231PS zmm6, zmm10, r14, 128, conv=CV_F16	# vfmadd231ps zmm6, zmm10, [r14+128]{float16}
+	VFMADD231PS zmm7, zmm10, r15, 128, conv=CV_F16	# vfmadd231ps zmm7, zmm10, [r15+128]{float16}
+	VFMADD231PS zmm0, zmm14, rsi, 160, conv=CV_F16	# vfmadd231ps zmm0, zmm14, [rsi+160]{float16}
+	VFMADD231PS zmm1, zmm14, r10, 160, conv=CV_F16	# vfmadd231ps zmm1, zmm14, [r10+160]{float16}
+	VFMADD231PS zmm2, zmm14, r11, 160, conv=CV_F16	# vfmadd231ps zmm2, zmm14, [r11+160]{float16}
+	VFMADD231PS zmm3, zmm14, rax, 160, conv=CV_F16	# vfmadd231ps zmm3, zmm14, [rax+160]{float16}
+	VFMADD231PS zmm4, zmm14, rbx, 160, conv=CV_F16	# vfmadd231ps zmm4, zmm14, [rbx+160]{float16}
+	VFMADD231PS zmm5, zmm14, r13, 160, conv=CV_F16	# vfmadd231ps zmm5, zmm14, [r13+160]{float16}
+	VFMADD231PS zmm6, zmm14, r14, 160, conv=CV_F16	# vfmadd231ps zmm6, zmm14, [r14+160]{float16}
+	VFMADD231PS zmm7, zmm14, r15, 160, conv=CV_F16	# vfmadd231ps zmm7, zmm14, [r15+160]{float16}
+	VFMADD231PS zmm0, zmm11, rsi, 192, conv=CV_F16	# vfmadd231ps zmm0, zmm11, [rsi+192]{float16}
+	VFMADD231PS zmm1, zmm11, r10, 192, conv=CV_F16	# vfmadd231ps zmm1, zmm11, [r10+192]{float16}
+	VFMADD231PS zmm2, zmm11, r11, 192, conv=CV_F16	# vfmadd231ps zmm2, zmm11, [r11+192]{float16}
+	VFMADD231PS zmm3, zmm11, rax, 192, conv=CV_F16	# vfmadd231ps zmm3, zmm11, [rax+192]{float16}
+	VFMADD231PS zmm4, zmm11, rbx, 192, conv=CV_F16	# vfmadd231ps zmm4, zmm11, [rbx+192]{float16}
+	VFMADD231PS zmm5, zmm11, r13, 192, conv=CV_F16	# vfmadd231ps zmm5, zmm11, [r13+192]{float16}
+	VFMADD231PS zmm6, zmm11, r14, 192, conv=CV_F16	# vfmadd231ps zmm6, zmm11, [r14+192]{float16}
+	VFMADD231PS zmm7, zmm11, r15, 192, conv=CV_F16	# vfmadd231ps zmm7, zmm11, [r15+192]{float16}
+	VFMADD231PS zmm0, zmm15, rsi, 224, conv=CV_F16	# vfmadd231ps zmm0, zmm15, [rsi+224]{float16}
+	VFMADD231PS zmm1, zmm15, r10, 224, conv=CV_F16	# vfmadd231ps zmm1, zmm15, [r10+224]{float16}
+	VFMADD231PS zmm2, zmm15, r11, 224, conv=CV_F16	# vfmadd231ps zmm2, zmm15, [r11+224]{float16}
+	VFMADD231PS zmm3, zmm15, rax, 224, conv=CV_F16	# vfmadd231ps zmm3, zmm15, [rax+224]{float16}
+	VFMADD231PS zmm4, zmm15, rbx, 224, conv=CV_F16	# vfmadd231ps zmm4, zmm15, [rbx+224]{float16}
+	VFMADD231PS zmm5, zmm15, r13, 224, conv=CV_F16	# vfmadd231ps zmm5, zmm15, [r13+224]{float16}
+	VFMADD231PS zmm6, zmm15, r14, 224, conv=CV_F16	# vfmadd231ps zmm6, zmm15, [r14+224]{float16}
+	VFMADD231PS zmm7, zmm15, r15, 224, conv=CV_F16	# vfmadd231ps zmm7, zmm15, [r15+224]{float16}
+	VLOADUNPACKLPS zmm8, rdi, 74, conv=CV_U8	# vloadunpacklps zmm8, [rdi+74]{uint8}
+	VLOADUNPACKHPS zmm8, rdi, 138, conv=CV_U8	# vloadunpackhps zmm8, [rdi+138]{uint8}
+	VLOADUNPACKLPS zmm9, rdi, 92, conv=CV_U8	# vloadunpacklps zmm9, [rdi+92]{uint8}
+	VLOADUNPACKHPS zmm9, rdi, 156, conv=CV_U8	# vloadunpackhps zmm9, [rdi+156]{uint8}
+	VLOADUNPACKLPS zmm10, rdi, 110, conv=CV_U8	# vloadunpacklps zmm10, [rdi+110]{uint8}
+	VLOADUNPACKHPS zmm10, rdi, 174, conv=CV_U8	# vloadunpackhps zmm10, [rdi+174]{uint8}
+	VLOADUNPACKLPS zmm11, rdi, 128, conv=CV_U8	# vloadunpacklps zmm11, [rdi+128]{uint8}
+	VLOADUNPACKHPS zmm11, rdi, 192, conv=CV_U8	# vloadunpackhps zmm11, [rdi+192]{uint8}
+	VMULPS zmm12, zmm8, r9, 24, conv=CV_1TO16	# vmulps zmm12, zmm8, [r9+24]{1to16}
+	VMULPS zmm13, zmm9, r9, 24, conv=CV_1TO16	# vmulps zmm13, zmm9, [r9+24]{1to16}
+	VMULPS zmm14, zmm10, r9, 24, conv=CV_1TO16	# vmulps zmm14, zmm10, [r9+24]{1to16}
+	VMULPS zmm15, zmm11, r9, 24, conv=CV_1TO16	# vmulps zmm15, zmm11, [r9+24]{1to16}
+	VRNDFXPNTPS zmm12, zmm12, 1	# vrndfxpntps zmm12, zmm12, 1
+	VRNDFXPNTPS zmm13, zmm13, 1	# vrndfxpntps zmm13, zmm13, 1
+	VRNDFXPNTPS zmm14, zmm14, 1	# vrndfxpntps zmm14, zmm14, 1
+	VRNDFXPNTPS zmm15, zmm15, 1	# vrndfxpntps zmm15, zmm15, 1
+	VFNMADD231PS zmm8, zmm12, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm8, zmm12, [r9+0]{1to16}
+	VFNMADD231PS zmm9, zmm13, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm9, zmm13, [r9+0]{1to16}
+	VFNMADD231PS zmm10, zmm14, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm10, zmm14, [r9+0]{1to16}
+	VFNMADD231PS zmm11, zmm15, r9, 0, conv=CV_1TO16	# vfnmadd231ps zmm11, zmm15, [r9+0]{1to16}
+	VSUBPS zmm8, zmm8, r9, 44, conv=CV_1TO16	# vsubps zmm8, zmm8, [r9+44]{1to16}
+	VSUBPS zmm9, zmm9, r9, 44, conv=CV_1TO16	# vsubps zmm9, zmm9, [r9+44]{1to16}
+	VSUBPS zmm10, zmm10, r9, 44, conv=CV_1TO16	# vsubps zmm10, zmm10, [r9+44]{1to16}
+	VSUBPS zmm11, zmm11, r9, 44, conv=CV_1TO16	# vsubps zmm11, zmm11, [r9+44]{1to16}
+	VSUBPS zmm12, zmm12, r9, 44, conv=CV_1TO16	# vsubps zmm12, zmm12, [r9+44]{1to16}
+	VSUBPS zmm13, zmm13, r9, 44, conv=CV_1TO16	# vsubps zmm13, zmm13, [r9+44]{1to16}
+	VSUBPS zmm14, zmm14, r9, 44, conv=CV_1TO16	# vsubps zmm14, zmm14, [r9+44]{1to16}
+	VSUBPS zmm15, zmm15, r9, 44, conv=CV_1TO16	# vsubps zmm15, zmm15, [r9+44]{1to16}
+	VMULPS zmm8, zmm8, rcx, 16, conv=CV_1TO16	# vmulps zmm8, zmm8, [rcx+16]{1to16}
+	VMULPS zmm9, zmm9, rcx, 20, conv=CV_1TO16	# vmulps zmm9, zmm9, [rcx+20]{1to16}
+	VMULPS zmm10, zmm10, rcx, 24, conv=CV_1TO16	# vmulps zmm10, zmm10, [rcx+24]{1to16}
+	VMULPS zmm11, zmm11, rcx, 28, conv=CV_1TO16	# vmulps zmm11, zmm11, [rcx+28]{1to16}
+	VMULPS zmm12, zmm12, rcx, 16, conv=CV_1TO16	# vmulps zmm12, zmm12, [rcx+16]{1to16}
+	VMULPS zmm13, zmm13, rcx, 20, conv=CV_1TO16	# vmulps zmm13, zmm13, [rcx+20]{1to16}
+	VMULPS zmm14, zmm14, rcx, 24, conv=CV_1TO16	# vmulps zmm14, zmm14, [rcx+24]{1to16}
+	VMULPS zmm15, zmm15, rcx, 28, conv=CV_1TO16	# vmulps zmm15, zmm15, [rcx+28]{1to16}
+	VFMADD231PS zmm0, zmm8, rsi, 256, conv=CV_F16	# vfmadd231ps zmm0, zmm8, [rsi+256]{float16}
+	VFMADD231PS zmm1, zmm8, r10, 256, conv=CV_F16	# vfmadd231ps zmm1, zmm8, [r10+256]{float16}
+	VFMADD231PS zmm2, zmm8, r11, 256, conv=CV_F16	# vfmadd231ps zmm2, zmm8, [r11+256]{float16}
+	VFMADD231PS zmm3, zmm8, rax, 256, conv=CV_F16	# vfmadd231ps zmm3, zmm8, [rax+256]{float16}
+	VFMADD231PS zmm4, zmm8, rbx, 256, conv=CV_F16	# vfmadd231ps zmm4, zmm8, [rbx+256]{float16}
+	VFMADD231PS zmm5, zmm8, r13, 256, conv=CV_F16	# vfmadd231ps zmm5, zmm8, [r13+256]{float16}
+	VFMADD231PS zmm6, zmm8, r14, 256, conv=CV_F16	# vfmadd231ps zmm6, zmm8, [r14+256]{float16}
+	VFMADD231PS zmm7, zmm8, r15, 256, conv=CV_F16	# vfmadd231ps zmm7, zmm8, [r15+256]{float16}
+	VFMADD231PS zmm0, zmm12, rsi, 288, conv=CV_F16	# vfmadd231ps zmm0, zmm12, [rsi+288]{float16}
+	VFMADD231PS zmm1, zmm12, r10, 288, conv=CV_F16	# vfmadd231ps zmm1, zmm12, [r10+288]{float16}
+	VFMADD231PS zmm2, zmm12, r11, 288, conv=CV_F16	# vfmadd231ps zmm2, zmm12, [r11+288]{float16}
+	VFMADD231PS zmm3, zmm12, rax, 288, conv=CV_F16	# vfmadd231ps zmm3, zmm12, [rax+288]{float16}
+	VFMADD231PS zmm4, zmm12, rbx, 288, conv=CV_F16	# vfmadd231ps zmm4, zmm12, [rbx+288]{float16}
+	VFMADD231PS zmm5, zmm12, r13, 288, conv=CV_F16	# vfmadd231ps zmm5, zmm12, [r13+288]{float16}
+	VFMADD231PS zmm6, zmm12, r14, 288, conv=CV_F16	# vfmadd231ps zmm6, zmm12, [r14+288]{float16}
+	VFMADD231PS zmm7, zmm12, r15, 288, conv=CV_F16	# vfmadd231ps zmm7, zmm12, [r15+288]{float16}
+	VFMADD231PS zmm0, zmm9, rsi, 320, conv=CV_F16	# vfmadd231ps zmm0, zmm9, [rsi+320]{float16}
+	VFMADD231PS zmm1, zmm9, r10, 320, conv=CV_F16	# vfmadd231ps zmm1, zmm9, [r10+320]{float16}
+	VFMADD231PS zmm2, zmm9, r11, 320, conv=CV_F16	# vfmadd231ps zmm2, zmm9, [r11+320]{float16}
+	VFMADD231PS zmm3, zmm9, rax, 320, conv=CV_F16	# vfmadd231ps zmm3, zmm9, [rax+320]{float16}
+	VFMADD231PS zmm4, zmm9, rbx, 320, conv=CV_F16	# vfmadd231ps zmm4, zmm9, [rbx+320]{float16}
+	VFMADD231PS zmm5, zmm9, r13, 320, conv=CV_F16	# vfmadd231ps zmm5, zmm9, [r13+320]{float16}
+	VFMADD231PS zmm6, zmm9, r14, 320, conv=CV_F16	# vfmadd231ps zmm6, zmm9, [r14+320]{float16}
+	VFMADD231PS zmm7, zmm9, r15, 320, conv=CV_F16	# vfmadd231ps zmm7, zmm9, [r15+320]{float16}
+	VFMADD231PS zmm0, zmm13, rsi, 352, conv=CV_F16	# vfmadd231ps zmm0, zmm13, [rsi+352]{float16}
+	VFMADD231PS zmm1, zmm13, r10, 352, conv=CV_F16	# vfmadd231ps zmm1, zmm13, [r10+352]{float16}
+	VFMADD231PS zmm2, zmm13, r11, 352, conv=CV_F16	# vfmadd231ps zmm2, zmm13, [r11+352]{float16}
+	VFMADD231PS zmm3, zmm13, rax, 352, conv=CV_F16	# vfmadd231ps zmm3, zmm13, [rax+352]{float16}
+	VFMADD231PS zmm4, zmm13, rbx, 352, conv=CV_F16	# vfmadd231ps zmm4, zmm13, [rbx+352]{float16}
+	VFMADD231PS zmm5, zmm13, r13, 352, conv=CV_F16	# vfmadd231ps zmm5, zmm13, [r13+352]{float16}
+	VFMADD231PS zmm6, zmm13, r14, 352, conv=CV_F16	# vfmadd231ps zmm6, zmm13, [r14+352]{float16}
+	VFMADD231PS zmm7, zmm13, r15, 352, conv=CV_F16	# vfmadd231ps zmm7, zmm13, [r15+352]{float16}
+	VFMADD231PS zmm0, zmm10, rsi, 384, conv=CV_F16	# vfmadd231ps zmm0, zmm10, [rsi+384]{float16}
+	VFMADD231PS zmm1, zmm10, r10, 384, conv=CV_F16	# vfmadd231ps zmm1, zmm10, [r10+384]{float16}
+	VFMADD231PS zmm2, zmm10, r11, 384, conv=CV_F16	# vfmadd231ps zmm2, zmm10, [r11+384]{float16}
+	VFMADD231PS zmm3, zmm10, rax, 384, conv=CV_F16	# vfmadd231ps zmm3, zmm10, [rax+384]{float16}
+	VFMADD231PS zmm4, zmm10, rbx, 384, conv=CV_F16	# vfmadd231ps zmm4, zmm10, [rbx+384]{float16}
+	VFMADD231PS zmm5, zmm10, r13, 384, conv=CV_F16	# vfmadd231ps zmm5, zmm10, [r13+384]{float16}
+	VFMADD231PS zmm6, zmm10, r14, 384, conv=CV_F16	# vfmadd231ps zmm6, zmm10, [r14+384]{float16}
+	VFMADD231PS zmm7, zmm10, r15, 384, conv=CV_F16	# vfmadd231ps zmm7, zmm10, [r15+384]{float16}
+	VFMADD231PS zmm0, zmm14, rsi, 416, conv=CV_F16	# vfmadd231ps zmm0, zmm14, [rsi+416]{float16}
+	VFMADD231PS zmm1, zmm14, r10, 416, conv=CV_F16	# vfmadd231ps zmm1, zmm14, [r10+416]{float16}
+	VFMADD231PS zmm2, zmm14, r11, 416, conv=CV_F16	# vfmadd231ps zmm2, zmm14, [r11+416]{float16}
+	VFMADD231PS zmm3, zmm14, rax, 416, conv=CV_F16	# vfmadd231ps zmm3, zmm14, [rax+416]{float16}
+	VFMADD231PS zmm4, zmm14, rbx, 416, conv=CV_F16	# vfmadd231ps zmm4, zmm14, [rbx+416]{float16}
+	VFMADD231PS zmm5, zmm14, r13, 416, conv=CV_F16	# vfmadd231ps zmm5, zmm14, [r13+416]{float16}
+	VFMADD231PS zmm6, zmm14, r14, 416, conv=CV_F16	# vfmadd231ps zmm6, zmm14, [r14+416]{float16}
+	VFMADD231PS zmm7, zmm14, r15, 416, conv=CV_F16	# vfmadd231ps zmm7, zmm14, [r15+416]{float16}
+	VFMADD231PS zmm0, zmm11, rsi, 448, conv=CV_F16	# vfmadd231ps zmm0, zmm11, [rsi+448]{float16}
+	VFMADD231PS zmm1, zmm11, r10, 448, conv=CV_F16	# vfmadd231ps zmm1, zmm11, [r10+448]{float16}
+	VFMADD231PS zmm2, zmm11, r11, 448, conv=CV_F16	# vfmadd231ps zmm2, zmm11, [r11+448]{float16}
+	VFMADD231PS zmm3, zmm11, rax, 448, conv=CV_F16	# vfmadd231ps zmm3, zmm11, [rax+448]{float16}
+	VFMADD231PS zmm4, zmm11, rbx, 448, conv=CV_F16	# vfmadd231ps zmm4, zmm11, [rbx+448]{float16}
+	VFMADD231PS zmm5, zmm11, r13, 448, conv=CV_F16	# vfmadd231ps zmm5, zmm11, [r13+448]{float16}
+	VFMADD231PS zmm6, zmm11, r14, 448, conv=CV_F16	# vfmadd231ps zmm6, zmm11, [r14+448]{float16}
+	VFMADD231PS zmm7, zmm11, r15, 448, conv=CV_F16	# vfmadd231ps zmm7, zmm11, [r15+448]{float16}
+	VFMADD231PS zmm0, zmm15, rsi, 480, conv=CV_F16	# vfmadd231ps zmm0, zmm15, [rsi+480]{float16}
+	VFMADD231PS zmm1, zmm15, r10, 480, conv=CV_F16	# vfmadd231ps zmm1, zmm15, [r10+480]{float16}
+	VFMADD231PS zmm2, zmm15, r11, 480, conv=CV_F16	# vfmadd231ps zmm2, zmm15, [r11+480]{float16}
+	VFMADD231PS zmm3, zmm15, rax, 480, conv=CV_F16	# vfmadd231ps zmm3, zmm15, [rax+480]{float16}
+	VFMADD231PS zmm4, zmm15, rbx, 480, conv=CV_F16	# vfmadd231ps zmm4, zmm15, [rbx+480]{float16}
+	VFMADD231PS zmm5, zmm15, r13, 480, conv=CV_F16	# vfmadd231ps zmm5, zmm15, [r13+480]{float16}
+	VFMADD231PS zmm6, zmm15, r14, 480, conv=CV_F16	# vfmadd231ps zmm6, zmm15, [r14+480]{float16}
+	VFMADD231PS zmm7, zmm15, r15, 480, conv=CV_F16	# vfmadd231ps zmm7, zmm15, [r15+480]{float16}
+	VMOVAPS_ST r8, 0, zmm0	# vmovaps [r8+0], zmm0
+	VMOVAPS_ST r8, 64, zmm1	# vmovaps [r8+64], zmm1
+	VMOVAPS_ST r8, 128, zmm2	# vmovaps [r8+128], zmm2
+	VMOVAPS_ST r8, 192, zmm3	# vmovaps [r8+192], zmm3
+	VMOVAPS_ST r8, 256, zmm4	# vmovaps [r8+256], zmm4
+	VMOVAPS_ST r8, 320, zmm5	# vmovaps [r8+320], zmm5
+	VMOVAPS_ST r8, 384, zmm6	# vmovaps [r8+384], zmm6
+	VMOVAPS_ST r8, 448, zmm7	# vmovaps [r8+448], zmm7
+    pop %r15
+    pop %r14
+    pop %r13
+    pop %rbx
+    ret
+    .size phi_q4_0_8h, .-phi_q4_0_8h

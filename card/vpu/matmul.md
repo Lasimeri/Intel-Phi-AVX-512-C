@@ -41,7 +41,9 @@ what is where in the assembly and what its gates were.
 - **The constants** the quantized kernels share (`g_consts`, `C_*` in
   `kernels.md`) are data here, in `.float` and `.long`, where the C
   computed them at start; **the kernel table** `g_fmt` names each
-  format's block bytes and its six kernels.
+  format's block bytes and its six kernels. Q4_0 (2026-11-09) is row 8
+  of the table (144 bytes, `phi_q4_0_*`) and the 8.0 at offset 44 of the
+  constants, which was padding.
 - **The float weight types** (`rows_slice`, `rows_slice_id`): a row
   against four activation rows (`phi_dot4_*`) or one (`phi_dot_*`), the
   sixteen sums and the row's last `k % 16` elements in the x87 unit

@@ -19,7 +19,7 @@ service (`K_UPLOAD`, `K_MATMUL`, `K_MATMUL_ID`, `K_FREE`, `K_FFN`,
 | `check_swiglu`, `moe_check`, `probe` | the SwiGLU check, the one-token mixture rate (`--moe`) and the probe (`--probe`), below |
 
 `check` builds random weights in every type the card takes (f32, f16,
-Q4_K, Q5_K, Q6_K, Q8_0, IQ4_XS: any byte pattern is a valid block, the
+Q4_K, Q5_K, Q6_K, Q8_0, IQ4_XS, Q4_0: any byte pattern is a valid block, the
 float16 scales drawn small), dequantizes them on the host exactly as
 ggml-quants.c's `dequantize_row_*` do (the formulas are transcribed in
 `random_row`), takes the dot products with random activations in f64,

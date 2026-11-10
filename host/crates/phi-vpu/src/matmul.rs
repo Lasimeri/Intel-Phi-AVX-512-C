@@ -93,6 +93,7 @@ pub fn type_name(t: u32) -> &'static str {
         MM_Q8_0 => "q8_0",
         MM_IQ4_XS => "iq4_xs",
         MM_BF16 => "bf16",
+        MM_Q4_0 => "q4_0",
         _ => "?",
     }
 }
@@ -107,6 +108,7 @@ pub fn row_bytes(t: u32, k: u64) -> u64 {
         MM_Q6_K => k / 256 * 210,
         MM_Q8_0 => k / 32 * 34,
         MM_IQ4_XS => k / 256 * 136,
+        MM_Q4_0 => k / 32 * 18,
         _ => 0,
     }
 }
@@ -117,7 +119,7 @@ pub fn shape_ok(t: u32, k: u64, nb_a: u64, nb_b: u64) -> bool {
         MM_F32 => nb_a >= k * 4,
         MM_F16 | MM_BF16 => nb_a >= k * 2 && nb_a % 32 == 0,
         MM_Q4_K | MM_Q5_K => k % 256 == 0 && nb_a >= row_bytes(t, k) && nb_a % 16 == 0 && nb_b % 64 == 0,
-        MM_Q6_K | MM_IQ4_XS => k % 256 == 0 && nb_a >= row_bytes(t, k) && nb_b % 64 == 0,
+        MM_Q6_K | MM_IQ4_XS | MM_Q4_0 => k % 256 == 0 && nb_a >= row_bytes(t, k) && nb_b % 64 == 0,
         MM_Q8_0 => k % 32 == 0 && nb_a >= row_bytes(t, k) && nb_b % 64 == 0,
         _ => false,
     }
@@ -364,6 +366,25 @@ fn random_row(rng: &mut Rng, t: u32, k: u64) -> (Vec<u8>, Vec<f32>) {
                 let d = f16_to_f32(u16::from_le_bytes([blk[0], blk[1]]));
                 for j in 0..32 {
                     vals.push(blk[2 + j] as i8 as f32 * d);
+                }
+            }
+        }
+        MM_Q4_0 => {
+            // ggml's dequantize_row_q4_0: the low nibbles are weights 0..16
+            // of the block, the high ones 16..32, each (q - 8) * d.
+            for _ in 0..k / 32 {
+                let start = bytes.len();
+                bytes.extend_from_slice(&half(rng, 0.02));
+                for _ in 0..16 {
+                    bytes.push(rng.byte());
+                }
+                let blk = &bytes[start..];
+                let d = f16_to_f32(u16::from_le_bytes([blk[0], blk[1]]));
+                for j in 0..16 {
+                    vals.push(((blk[2 + j] & 0xf) as i32 - 8) as f32 * d);
+                }
+                for j in 0..16 {
+                    vals.push(((blk[2 + j] >> 4) as i32 - 8) as f32 * d);
                 }
             }
         }
@@ -956,10 +977,10 @@ fn moe_rate(
 pub fn moe_check(w: &Window, threads: u32, only: Option<&str>, reps: u32, act: u32, shapes: &[(u64, u64, u64)]) -> Result<()> {
     ACT.store(act, Ordering::Relaxed);
     let t = match only {
-        Some(o) => [MM_Q4_K, MM_Q5_K, MM_Q6_K, MM_Q8_0, MM_IQ4_XS]
+        Some(o) => [MM_Q4_K, MM_Q5_K, MM_Q6_K, MM_Q8_0, MM_IQ4_XS, MM_Q4_0]
             .into_iter()
             .find(|&t| type_name(t) == o)
-            .ok_or_else(|| anyhow::anyhow!("--moe takes a quantized type: q4_K q5_K q6_K q8_0 iq4_xs"))?,
+            .ok_or_else(|| anyhow::anyhow!("--moe takes a quantized type: q4_K q5_K q6_K q8_0 iq4_xs q4_0"))?,
         None => MM_Q4_K,
     };
     let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
@@ -1029,10 +1050,10 @@ pub fn check(
     CHUNK.store(chunk, Ordering::Relaxed);
     PAD.store(pad, Ordering::Relaxed);
     let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
-    let all = [MM_F32, MM_F16, MM_BF16, MM_Q4_K, MM_Q5_K, MM_Q6_K, MM_Q8_0, MM_IQ4_XS];
+    let all = [MM_F32, MM_F16, MM_BF16, MM_Q4_K, MM_Q5_K, MM_Q6_K, MM_Q8_0, MM_IQ4_XS, MM_Q4_0];
     let types: Vec<u32> = all.iter().copied().filter(|&t| only.is_none_or(|o| o == type_name(t))).collect();
     if types.is_empty() {
-        bail!("no such type; one of f32 f16 q4_K q5_K q6_K q8_0 iq4_xs");
+        bail!("no such type; one of f32 f16 bf16 q4_K q5_K q6_K q8_0 iq4_xs q4_0");
     }
     // The feed-forward's SwiGLU first: the fused request (check_ffn) is
     // built on it.
@@ -1087,7 +1108,7 @@ pub fn check(
         // each piece with its float kernels), plain and as mixtures
         // sharing the ids (a gate and up pair, and a down-like one with a
         // row per column).
-        let quants = [MM_Q4_K, MM_Q5_K, MM_Q6_K, MM_Q8_0, MM_IQ4_XS];
+        let quants = [MM_Q4_K, MM_Q5_K, MM_Q6_K, MM_Q8_0, MM_IQ4_XS, MM_Q4_0];
         let other = match quants.iter().position(|&q| q == t) {
             Some(i) => quants[(i + 1) % quants.len()],
             None => t,

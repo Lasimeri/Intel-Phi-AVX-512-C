@@ -28,7 +28,8 @@
 #define VPU_MM_Q8_0 5
 #define VPU_MM_IQ4_XS 6
 #define VPU_MM_BF16 7
-#define VPU_MM_TYPES 8
+#define VPU_MM_Q4_0 8     /* 18-byte blocks of 32 weights, eight a superblock (144 bytes); k a multiple of 256 */
+#define VPU_MM_TYPES 9
 #define VPU_MM_PROBE 99   /* diagnostic: phi_probe writes 8 vectors to d (kernels.md) */
 #define VPU_MM_SWIGLU 98  /* diagnostic: d = silu(g) * u over m floats, g at b_off and u at b_off + nb_b, one thread (kernels.md) */
 

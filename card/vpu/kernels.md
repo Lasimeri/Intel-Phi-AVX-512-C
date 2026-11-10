@@ -1,6 +1,6 @@
 # kernels.S: the dot-product kernels
 
-The card's matrix-multiply kernels: 41 routines the service (`matmul.S`,
+The card's matrix-multiply kernels: 47 routines the service (`matmul.S`,
 until the port completes `vpu_matmul.c`) calls per superblock or per
 row, written with the MVEX macros of `mvex.inc` around plain x86-64
 scaffolding. Hand-maintained since 2026-09-30. Before that the file was
@@ -17,7 +17,7 @@ about the kernels' design.
 | `phi_dot_f16(a, b, k16, out)`, `phi_dot_f32` | the 16 partial sums of `a[0..16*k16) . b[0..16*k16)` into `out[16]` (64-byte aligned); `a` is 16 halfs per vector (the `{float16}` up-conversion on the load, which needs 32-byte alignment: ggml's tensors have it) or 16 floats at any alignment, `b` 16 floats at any alignment (the unpack pair); four accumulators cover the vector unit's result latency, four vectors per iteration and a one-vector tail |
 | `phi_dot4_f16(a, b, k16, out, nb)`, `phi_dot4_f32` | one weight row against four activation rows `nb` bytes apart, 64 sums into `out` |
 | `phi_dot_bf16(a, b, k16, out)`, `phi_dot4_bf16(a, b, k16, out, nb)` | the same for bfloat16 weights: a `{uint16}` load zero-extends 16 of them into int32 lanes and `vpslld` by 16 puts each in a float32's high half, exactly the value it stands for (32-byte alignment as float16); 2026-10-08, for Flash Next BF16 |
-| `phi_{q4k,q5k,q6k,q8_0,iq4xs}_{1,4,8}` and their `h` twins | one 256-weight superblock of a quantized row against 1, 4 or 8 activation rows, float32 or (`h`) float16 |
+| `phi_{q4k,q5k,q6k,q8_0,iq4xs,q4_0}_{1,4,8}` and their `h` twins | one 256-weight superblock of a quantized row against 1, 4 or 8 activation rows, float32 or (`h`) float16 |
 | `phi_swiglu`, `phi_swiglu16`, `phi_swiglu_edge`, `phi_swiglu16_edge` | the feed-forward's SwiGLU on the vector unit |
 | `phi_copy64(dst, src, count)` | `count` 64-byte vectors, whole-vector loads and stores |
 | `phi_probe`, `phi_bench(kind, buf, count)` | the diagnostics of `phi-vpu matmul-check --probe` |
@@ -25,7 +25,7 @@ about the kernels' design.
 Every quantized kernel is emitted twice, `phi_q4k_8` reading float32
 activation rows and `phi_q4k_8h` float16 ones: the same instructions
 with `{float16}` on the product's memory operand and a 32-byte row
-stride, 30 kernels in all; the card picks the twin by the request's
+stride, 36 kernels in all; the card picks the twin by the request's
 `b_type`. The float weight formats have no twin (their kernels are the
 `phi_dot4_*` family) and the card refuses a float16 activation request
 for them.
@@ -99,6 +99,20 @@ ggml-quants.c, the reference each kernel reproduces):
 | Q6_K | 210 bytes: ql[128], qh[64], scales[16], d | per 128-weight half: low nibbles with field 0 and 1 of qh, high nibbles with fields 2 and 3 | unpack pairs (210 is not a multiple of 16) |
 | Q8_0 | 34 bytes: d, qs[32]; eight per call | signed bytes at 34 i + 2 | unpack pairs |
 | IQ4_XS | 136 bytes: d, scales_h, scales_l[4], qs[128] | nibbles index `kvalues_iq4nl`; low nibbles of qs[16 ib..) are weights 32 ib.., high ones the next sixteen | unpack pairs (qs is 8-byte aligned) |
+| Q4_0 | 18 bytes: d, qs[16]; eight per call (144 bytes) | low nibbles of qs are weights 0..15 of the block, high ones 16..31, each `(q - 8) * d` | unpack pairs (18 is not a multiple of 16) |
+
+Q4_0 (2026-11-09) is the one format whose constant is subtracted, not
+folded into a minuend: `q - 8` by the 8.0 at `g_consts` + 44, then one
+multiply by the block's scale, which is where `dequantize_row_q4_0`
+rounds, so the weights are the reference's bit for bit. Its scales need
+no expanding permute (both nibble vectors of a block read the same
+scratch entry). The six kernels are the output of
+`tools/q4_0-kernels.c` (`tools/q4_0-kernels.md` has the steps). Rows
+whose length is not a multiple of 256 stay with the host (no tail
+routine, unlike Q8_0's). Measured on card 0, 4096 x 5120, 114 threads,
+the card's compute time only (`matmul-check --only q4_0 --repeat 3`):
+float32 activations 139.3 GFLOP/s at one row, 246.4 at eight, 251.3 at
+sixty-four; float16 126.4, 452.9, 490.3.
 
 Two facts about the unpack loads that `phi_probe` settled against the
 card: the unprefixed D0/D4 pair converts into int32 lanes and D1/D5 into

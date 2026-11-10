@@ -125,6 +125,22 @@ arguments than registers (`put_rows`, `plan`, `prepare`, `gather`, the
 ends) take them from named static blocks (`pr_*`, `pa_*`, `q_*`,
 `ga_*`, `en_*`), which the one lock makes as private as a frame.
 
+## Q4_0 (2026-11-09)
+
+`row_bytes` gives a Q4_0 row 144 bytes per 256 weights (eight 18-byte
+blocks, the number Q4_K has), `type_name` says `q4_0`, and `shape_ok`
+takes it through the 256-block rules (k a multiple of 256, the
+activation stride a multiple of 64, no alignment rule for the row: the
+card reads it with unpack pairs). The fused feed-forward's gate
+(`ffn.S`, `quantized`) still names Q4_K to IQ4_XS only, so a Q4_0
+feed-forward is three plain multiplies; under `PHI_GGML_OFFLOAD` the
+fused path is off for every type. Measured on a 27 B Q4_0 model (card 0,
+`PHI_GGML_CARD_BYTES=13100000000 PHI_GGML_OFFLOAD=1
+PHI_GGML_ALL_ROWS=1`, 120 card threads, 8 host threads): 14.7 GB of
+dense weights offered, 88.5% of every matrix's rows on the card (13.09
+GB), 2.605 tokens a second of generation against 0.2076 when the card
+took only the one Q6_K matrix (0.52 GB).
+
 ## Limits, said when reached
 
 8192 planned tensors (`splits`), 8192 offers, 512 whole-expert

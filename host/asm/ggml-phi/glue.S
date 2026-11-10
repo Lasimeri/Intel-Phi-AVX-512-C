@@ -115,7 +115,11 @@ card_type:
 	je 16f
 	cmpl $GGML_TYPE_BF16, %edi
 	je 17f
+	cmpl $GGML_TYPE_Q4_0, %edi
+	je 18f
 	movl $-1, %eax
+	ret
+18:	movl $MM_Q4_0, %eax
 	ret
 10:	movl $MM_F32, %eax
 	ret

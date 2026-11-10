@@ -257,6 +257,7 @@ t_q6k:	.asciz "q6_K"
 t_q80:	.asciz "q8_0"
 t_iq4xs:	.asciz "iq4_xs"
 t_bf16:	.asciz "bf16"
+t_q40:	.asciz "q4_0"
 t_unknown:	.asciz "?"
 st_ok:	.asciz "ok"
 st_alloc:	.asciz "the card could not reserve memory"
@@ -450,6 +451,8 @@ row_bytes:
 	jae 9f
 	shrq $8, %rax
 	cmpl $MM_Q4_K, %edi
+	je 4f
+	cmpl $MM_Q4_0, %edi			# eight 18-byte blocks: 144 as well
 	je 4f
 	cmpl $MM_Q5_K, %edi
 	je 5f
@@ -5784,5 +5787,5 @@ phi_ggml_free_all:
 
 	.section .data.rel.ro,"aw"
 	.balign 8
-type_names:	.quad t_f32, t_f16, t_q4k, t_q5k, t_q6k, t_q80, t_iq4xs, t_bf16
+type_names:	.quad t_f32, t_f16, t_q4k, t_q5k, t_q6k, t_q80, t_iq4xs, t_bf16, t_q40
 status_names:	.quad st_ok, st_alloc, st_pull, st_push, st_request, st_kernel

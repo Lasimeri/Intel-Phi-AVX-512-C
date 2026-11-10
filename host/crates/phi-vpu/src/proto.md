@@ -65,4 +65,5 @@ the feed-forward one): up to `MORE_MAX` (3) `MoreMat` entries of 40 bytes,
 each a resident slice, its quantized type, its rows, its row stride and
 where its results go. The unit test and the layout check pin them too.
 `MM_SWIGLU` (98) is the diagnostic type that runs the card's SwiGLU
-alone (`card/vpu/vpu_matmul.md`).
+alone (`card/vpu/vpu_matmul.md`). `MM_Q4_0` (8, 2026-11-09) is Q4_0,
+after `MM_BF16` so that no earlier type's number moved.

@@ -46,7 +46,8 @@ activations at `VPU_OFF_MORE`: "A layer's gate and up in one request").
 Weight types (`VPU_MM_*`, `a_type`): float32 and float16 rows use the
 dot kernels `phi_dot*_f16/bf16/f32` (one row against one or four activation
 rows, float16 up-converted by the load). The quantized formats of
-llama.cpp, Q4_K, Q5_K, Q6_K, Q8_0 and IQ4_XS, use the superblock kernels
+llama.cpp, Q4_K, Q5_K, Q6_K, Q8_0, IQ4_XS and (2026-11-09, `VPU_MM_Q4_0`
+8, eight 18-byte blocks a superblock) Q4_0, use the superblock kernels
 `phi_<fmt>_<1|4|8>` (`card/vpu/kernels.md`):
 one 256-weight superblock against 1, 4 or 8 activation rows, the format
 decoded on the vector unit, the scales too. The reference each format
