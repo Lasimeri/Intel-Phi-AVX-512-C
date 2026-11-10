@@ -15,6 +15,7 @@
 #define VPU_K_MATMUL 4   /* d = a . b^T with a cached (a_id) or in the window (a_off) */
 #define VPU_K_FREE   5   /* drop a_id (0: everything) */
 #define VPU_K_MATMUL_ID 6 /* the same, but a is one expert of a mixture chosen per column (ggml's MUL_MAT_ID) */
+#define VPU_K_DOWNLOAD 32 /* past the slot kinds VPU_K_PING..(9..16) of vpu_fexec.h; push bytes [a_off, a_off + bytes) of the resident a_id to the window at d_off (both block aligned): a card-held matrix back to the host */
 
 #define VPU_OFF_MATMUL 13312   /* struct vpu_matmul, in the control area */
 

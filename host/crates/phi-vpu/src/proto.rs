@@ -22,6 +22,9 @@ pub const OFF_REPLY: usize = 256;
 /// Window offset of the worker's running counters (`Stats`), one line it
 /// rewrites after every reply; the stack's phitop reads it for its rates.
 pub const OFF_STATS: usize = 320;
+/// Window offset of the doorbell lock: host-side clients take it before a
+/// request and free it after the reply; the card never touches it.
+pub const OFF_LOCK: usize = 15360;
 /// Where bulk data starts. Everything below is control words.
 pub const OFF_DATA: u64 = 1 << 20;
 
@@ -481,6 +484,9 @@ pub struct Ffn {
 /// the same request as the matmul descriptor's own: one pull, one
 /// dispatch, one push per result (`struct vpu_more`, vpu_matmul.h).
 pub const K_MATMUL_MORE: u32 = 8;
+/// Bytes [a_off, a_off + bytes) of the resident a_id pushed to the window at
+/// d_off (both block aligned): a card-held matrix back to the host.
+pub const K_DOWNLOAD: u32 = 32;
 /// Window offset of the further-matrices descriptor, after the
 /// feed-forward one.
 pub const OFF_MORE: usize = 13632;

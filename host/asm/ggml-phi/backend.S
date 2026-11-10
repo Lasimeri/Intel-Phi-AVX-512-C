@@ -173,6 +173,8 @@ pa_type:	.skip 8
 pa_m:	.skip 8
 pa_nb_a:	.skip 8
 pa_experts:	.skip 8
+tb_fn:	.skip 8			# tridma_back from the process (back_or_drop), 0 when it has none
+tb_tried:	.skip 8		# 1 once looked up
 pa_nb_a2:	.skip 8
 pa_f:	.skip 8
 pa_layer:	.skip 8
@@ -238,6 +240,7 @@ e_spin:	.asciz "PHI_GGML_SPIN_US"
 e_judge:	.asciz "PHI_GGML_JUDGE"
 e_pp_only:	.asciz "PHI_GGML_PP_ONLY"
 e_tg_only:	.asciz "PHI_GGML_TG_ONLY"
+s_tridma_back:	.asciz "tridma_back"
 e_min_bytes:	.asciz "PHI_GGML_MIN_BYTES"
 e_pp_adapt:	.asciz "PHI_GGML_PP_ADAPT"
 e_stream:	.asciz "PHI_GGML_STREAM"
@@ -910,6 +913,9 @@ open_card:
 	movl ncards(%rip), %edi
 	call card_at
 	movq %r13, CD_BASE(%rax)
+	# the doorbell lock starts free: a client killed between a request and its
+	# reply leaves it taken, and this backend is the card's only client now
+	movl $0, OFF_LOCK(%r13)
 	movq %rbx, CD_INDEX(%rax)
 	movl threads(%rip), %ecx
 	movl %ecx, CD_THREADS(%rax)
@@ -1980,6 +1986,52 @@ drop_pages:
 	ret
 8:	xorl %eax, %eax
 	popq %r13
+	popq %r12
+	popq %rbx
+	ret
+
+
+# back_or_drop(addr rdi, len rsi, id rdx): the card's rows of a dense
+# matrix, just uploaded under id, handed to the DMA router when the
+# process has one (tridma_back, an LD_PRELOAD library: the pages then come
+# back from the card by K_DOWNLOAD on a fault, not from the disk), else
+# given to MADV_PAGEOUT as before (drop_pages); the bytes in rax
+# (2026-11-06). A mixture's experts always go to drop_pages.
+	.globl back_or_drop
+back_or_drop:
+	pushq %rbx
+	pushq %r12
+	pushq %r13
+	movq %rdi, %rbx
+	movq %rsi, %r12
+	movq %rdx, %r13
+	cmpq $1, pa_experts(%rip)
+	jne 8f
+	cmpl $0, tb_tried(%rip)
+	jne 1f
+	movl $1, tb_tried(%rip)
+	xorl %edi, %edi				# RTLD_DEFAULT
+	leaq s_tridma_back(%rip), %rsi
+	call dlsym@PLT
+	movq %rax, tb_fn(%rip)
+1:	cmpq $0, tb_fn(%rip)
+	je 8f
+	xorl %edi, %edi
+	call card_at				# the first card
+	# tridma_back(addr, len, id, a_off 0, window base, threads)
+	movq CD_BASE(%rax), %r8
+	movl CD_THREADS(%rax), %r9d
+	movq %rbx, %rdi
+	movq %r12, %rsi
+	movq %r13, %rdx
+	xorl %ecx, %ecx
+	call *tb_fn(%rip)
+	testq %rax, %rax
+	jnz 9f
+8:	movq %rbx, %rdi
+	movq %r12, %rsi
+	call drop_pages
+9:	popq %r13
 	popq %r12
 	popq %rbx
 	ret
@@ -3439,7 +3491,8 @@ plan:
 	movq pa_m(%rip), %rsi
 	subq SP_R0(%rbx), %rsi
 	imulq pa_nb_a(%rip), %rsi
-	call drop_pages
+	movq SP_ID(%rbx), %rdx			# the first card's id of the slice
+	call back_or_drop
 	addq %rax, %r14
 	incq -88(%rbp)
 	jmp 82b

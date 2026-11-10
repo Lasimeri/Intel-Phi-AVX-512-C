@@ -607,8 +607,11 @@ main_loop:
 	je .Lreq_exec
 	cmpl $K_UPLOAD, %eax
 	jb .Lreq_poly_or_unknown
+	cmpl $K_DOWNLOAD, %eax
+	je .Lreq_matrix
 	cmpl $K_MATMUL_MORE, %eax
 	ja .Lreq_unknown
+.Lreq_matrix:
 	# the matrix service: (ctrl, kernel, threads, verbose, &compute, &pull, &push, &live)
 	subq $16, %rsp
 	leaq cur_live(%rip), %rax
@@ -786,10 +789,13 @@ main_loop:
 	# to the host-backed disk): the matrix service's requests log at -v -v.
 	movl vpu_verbose(%rip), %eax
 	movl rq+RQ_KERNEL(%rip), %ecx
+	cmpl $K_DOWNLOAD, %ecx
+	je .Lv_matrix
 	cmpl $K_UPLOAD, %ecx
 	jb 4f
 	cmpl $K_MATMUL_MORE, %ecx
 	ja 4f
+.Lv_matrix:
 	cmpl $1, %eax
 	jle main_loop
 	jmp 5f

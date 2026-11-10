@@ -1726,7 +1726,49 @@ vpu_matmul_run:
 	call l_end
 	jmp .Lok
 
-5:	# MATMUL, MATMUL_ID, MATMUL_MORE
+5:	cmpq $K_DOWNLOAD, r_kernel(%rip)
+	jne 59f
+	# K_DOWNLOAD (2026-11-06): bytes [a_off, a_off + bytes) of the resident
+	# a_id pushed to the window at d_off by push_data (the DMA channel
+	# first), so the host's GPU can take a card-held matrix back for a
+	# prompt's multiply without a copy of it in host memory
+	cmpq $0, MM_A_ID(%rbx)
+	je .Lbad
+	cmpq $0, MM_BYTES(%rbx)
+	je .Lbad
+	movq MM_A_OFF(%rbx), %rax
+	orq MM_D_OFF(%rbx), %rax
+	testq $VPU_BLOCK - 1, %rax
+	jnz .Lbad
+	movq MM_A_ID(%rbx), %rdi
+	call cache_find
+	testq %rax, %rax
+	js .Lbad
+	imulq $CE_SIZE, %rax, %r13
+	leaq g_cache(%rip), %rcx
+	addq %rcx, %r13				# the entry
+	movq MM_A_OFF(%rbx), %rax
+	addq MM_BYTES(%rbx), %rax
+	jc .Lbad
+	cmpq CE_BYTES(%r13), %rax
+	ja .Lbad
+	call now_ns
+	movq %rax, r_p0(%rip)
+	movq CE_MAP + MAP_P(%r13), %rdi
+	addq MM_A_OFF(%rbx), %rdi
+	movq MM_BYTES(%rbx), %rsi
+	movq MM_D_OFF(%rbx), %rdx
+	movl r_threads(%rip), %ecx
+	call push_data
+	testl %eax, %eax
+	jnz .Lpush
+	call now_ns
+	subq r_p0(%rip), %rax
+	movq r_ppush(%rip), %rcx
+	movq %rax, (%rcx)
+	jmp .Lok
+
+59:	# MATMUL, MATMUL_ID, MATMUL_MORE
 	cmpq $0, MM_M(%rbx)
 	je .Lbad_said
 	cmpq $0, MM_N(%rbx)

@@ -179,6 +179,12 @@ wait_ready:
 # number in rax.
 	.globl doorbell
 doorbell:
+	# the doorbell lock (OFF_LOCK, 2026-11-06): one host-side client at a time;
+	# wait_reply frees it, the card has one request slot
+	pushq %rdi
+	leaq OFF_LOCK(%rdi), %rdi
+	call lock_take
+	popq %rdi
 	movq OFF_REQ + RQ_SEQ(%rdi), %rax
 	incq %rax				# seq
 	leaq -1(%rax), %rcx
@@ -233,7 +239,8 @@ wait_reply:
 	call sleep_ns
 	jmp 1b
 8:	movl $1, %eax
-9:	popq %r15
+9:	movl $0, OFF_LOCK(%rbx)		# the doorbell lock, freed on every return
+	popq %r15
 	popq %r14
 	popq %r13
 	popq %r12

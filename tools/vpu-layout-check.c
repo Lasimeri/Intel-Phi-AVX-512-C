@@ -118,6 +118,7 @@ int main(void)
 	check("VPU_OFF_REQ", VPU_OFF_REQ, 64);
 	check("VPU_OFF_NONCE", VPU_OFF_NONCE, 128);
 	check("VPU_OFF_REPLY", VPU_OFF_REPLY, 256);
+	check("VPU_OFF_LOCK", VPU_OFF_LOCK, 15360);
 	check("VPU_OFF_STATS", VPU_OFF_STATS, 320);
 	check("sizeof(vpu_stats)", sizeof(struct vpu_stats), 64);
 	check("stats.requests", offsetof(struct vpu_stats, requests), 0);

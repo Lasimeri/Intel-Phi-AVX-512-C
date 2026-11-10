@@ -35,6 +35,7 @@
 #define VPU_OFF_REPLY 256     /* struct vpu_reply */
 #define VPU_OFF_STATS 320     /* struct vpu_stats: the worker's running counters, one line it rewrites after every reply (phitop reads it) */
 #define VPU_OFF_CDMA_STATS 192   /* the card DMA channel's traffic: u64 bytes into the card, bytes out, copies in, copies out; one line rewritten after every reply (phitop reads it) */
+#define VPU_OFF_LOCK 15360   /* the doorbell lock (2026-11-06): one line host-side clients take (xchg 1) before a request and free (store 0) after its reply, so two of them never ring the card at once; the card never touches it */
 #define VPU_OFF_DATA  (1u << 20)   /* bulk data starts here, page aligned */
 
 #define VPU_MAGIC 0x5650555F52454144ULL   /* "VPU_READ" */

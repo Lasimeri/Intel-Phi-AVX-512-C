@@ -156,6 +156,19 @@ backend. The backend loaded with no tensor allowed on a card
 the CPU alone's 7.76 and 7.92, interleaved: the hand-offs, not the
 cards, cost about 30 ms a token (`docs/results/2026-10-07-rack-generation.md`).
 
+## The card rows handed to a DMA router (`back_or_drop`, 2026-11-06)
+
+Under `PHI_GGML_OFFLOAD`, after a dense matrix's card rows are uploaded (the
+range from row `SP_R0` to the last, card byte 0 of the slice, id `SP_ID`),
+`back_or_drop` looks up `tridma_back` once with `dlsym(RTLD_DEFAULT, ...)`
+(`imports.list` has `dlsym`; ggml loads this library `RTLD_LOCAL`, so the router
+is an `LD_PRELOAD` library and this side passes it the window base and the thread
+count). When the process has it, the range goes to the router, which backs those
+pages with the card (`VPU_K_DOWNLOAD` on a fault) instead of the disk; else, and
+always for a mixture's experts, the pages go to `MADV_PAGEOUT` as before
+(`drop_pages`). `phi_ggml_open` also clears the window's doorbell lock
+(`OFF_LOCK`, see `../common/window.md`) when it maps a card.
+
 ## Streamed weights (`PHI_GGML_STREAM`, 2026-11-06)
 
 `PHI_GGML_STREAM=1` keeps every weight in host RAM: `upload_area` copies

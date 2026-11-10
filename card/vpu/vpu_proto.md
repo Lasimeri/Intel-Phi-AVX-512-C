@@ -33,6 +33,7 @@ that stale memory can satisfy needs a control that fails.
 | 128 | the card alone writes it, once at start: the nonce its DMA channel's open copies back to check the window's card address (`cdma.md`); the host never touches this line |
 | 256 | `struct vpu_reply`, 48 bytes |
 | 320 | `struct vpu_stats`, 64 bytes: the worker's counters since it started (replies, errors, the sums of their total, compute, pull and push times, the last request's kind, threads and sequence number), rewritten whole after every reply; a host-side reader (the stack's phitop) takes two samples for the rates. The host never writes it |
+| 15360 | the doorbell lock (2026-11-06): a 32-bit test-and-set word host-side clients take before a request and free after its reply (`host/asm/common/window.md`), so two of them never use the one request slot at once; the card never touches it |
 | 1 MiB | bulk data |
 
 Each control word is on its own 64-byte line so the two sides never

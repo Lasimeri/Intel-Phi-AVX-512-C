@@ -5,7 +5,8 @@ The card as a matrix-multiply engine for the ggml backend
 (keep a tensor by id), `VPU_K_MATMUL` (d = a . b^T), `VPU_K_MATMUL_ID` (a
 mixture of experts, one matrix per column), `VPU_K_MATMUL_MORE` (several
 matrices by the same activations in one request), `VPU_K_FFN` (a
-feed-forward block's share in one request) and `VPU_K_FREE`, with the
+feed-forward block's share in one request), `VPU_K_DOWNLOAD` (a resident tensor's
+bytes back to the window) and `VPU_K_FREE`, with the
 descriptors of `vpu_matmul.h` (their offsets in `proto.inc`). It replaces
 `vpu_matmul.c`; the row loops are `rows.S`, the kernels `kernels.S`. The
 behaviour is the C worker's (`vpu_matmul.md` documents the design and

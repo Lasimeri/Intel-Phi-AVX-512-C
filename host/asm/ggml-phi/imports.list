@@ -1,3 +1,4 @@
+dlsym
 ggml_add
 ggml_backend_buft_is_host
 ggml_backend_cpu_buffer_from_ptr

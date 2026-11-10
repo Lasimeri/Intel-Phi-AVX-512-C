@@ -30,6 +30,15 @@ activations at `VPU_OFF_MORE`: "A layer's gate and up in one request").
   m floats, contiguous) goes back through it. The rows of `a` are split
   across the pool's threads (`vpu_pool_map`).
 - `VPU_K_FREE`: drop a tensor, or all of them.
+- `VPU_K_DOWNLOAD` (32, 2026-11-06): bytes `[a_off, a_off + bytes)` of the
+  resident `a_id` pushed to the window at `d_off` (both block aligned) by
+  `push_data`, the DMA channel first: a card-held matrix back to the host,
+  for a GPU that multiplies a prompt by weights the host does not keep. 32,
+  not 9, because 9 to 16 are the slot protocol's kinds (`K_PING` to
+  `K_LAST`, `vpu_fexec.h`). Measured 2026-11-06 on the 7120A: 10 downloads
+  of a 32 MiB matrix byte-identical to the upload, 0.81 GB/s card to window
+  (each 983,040-byte piece copied into the landing area, then one engine
+  copy, serially), the window to the GPU 13.40 GB/s.
 
 Weight types (`VPU_MM_*`, `a_type`): float32 and float16 rows use the
 dot kernels `phi_dot*_f16/bf16/f32` (one row against one or four activation

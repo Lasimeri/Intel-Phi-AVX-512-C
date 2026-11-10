@@ -81,7 +81,9 @@ dispatches or requests (below).
   sleeps `idle_us`. A new number: the time, a time-stamp mark, the
   request line in one 64-byte vector load (`phi_copy64`; field by field
   would be a link round trip each), then by kind: `K_EXEC` to
-  `vpu_exec_run`, the matrix kinds to `vpu_matmul_run` (the C
+  `vpu_exec_run`, the matrix kinds (`K_UPLOAD` to `K_MATMUL_MORE`, 3 to 8,
+  and `K_DOWNLOAD`, 32, matched exactly so the slot kinds 9 to 16 stay
+  unknown here) to `vpu_matmul_run` (the C
   signature: control area, kind, threads, verbosity, and pointers for
   the compute, pull and push times and the slices run), `K_POLY30` here
   (buffers reserved, the input and coefficients pulled, `poly_dispatch`
