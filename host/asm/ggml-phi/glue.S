@@ -46,9 +46,17 @@
 	.set TM_REST, 4				# the rest inside: the scan, a drain, the bookkeeping
 	.set TM_LONG, 5				# outside gaps over TM_LONG_NS: between requests, a prompt on a GPU
 	.set TM_AHEAD, 6			# a multiply issued ahead: its activations kept, the request begun
+	.set TM_HOSTOPS, 7			# small operations run on the host's cores (PHI_GGML_HOSTOPS)
 	.set TM_SLOTS, 8
 	.set TM_LONG_NS, 20000000
 	.set TM_EVERY, 8192			# sub-graphs between two lines
+
+# The small operations of a generation step (PHI_GGML_HOSTOPS, glue.md): a
+# tensor qualifies when no dimension past the first is over HOSTOP_DIM (a
+# prompt's tensors carry their tokens there) and it has at most
+# HOSTOP_ELEMS elements.
+	.set HOSTOP_DIM, 31
+	.set HOSTOP_ELEMS, 1048576
 
 	.macro TM slot
 	cmpl $0, time_on(%rip)
@@ -81,6 +89,7 @@ verbose_on:	.skip 4			# -1 unasked
 ahead_on:	.skip 4			# PHI_GGML_AHEAD: -1 unasked, 0, 1
 	.balign 8
 ah_prev:	.skip 8			# the weight of the multiply before this one
+ah_first:	.skip 8			# the weight of the first multiply this backend ran: the one a pass begins with
 ah_valid:	.skip 8			# a multiply is issued ahead of its node
 ah_a:	.skip 8				# its weight
 ah_x:	.skip 8				# its activations
@@ -95,6 +104,7 @@ tm_prev:	.skip 8			# the last mark, ns
 tm_graphs:	.skip 8			# sub-graphs computed
 tm_acc:		.skip 8 * TM_SLOTS	# ns by slot
 time_on:	.skip 4			# PHI_GGML_TIME: -1 unasked, 0, 1
+hostops_on:	.skip 4			# PHI_GGML_HOSTOPS: -1 unasked, 0, 1
 	.balign 64
 phi_reg:	.skip REG_BYTES
 	.balign 64
@@ -156,6 +166,9 @@ s_tm4:	.asciz ", end "
 s_tm5:	.asciz ", rest "
 s_tm6:	.asciz ", issued ahead "
 s_tm7:	.asciz "; outside gaps over 20 ms "
+s_tm8:	.asciz ", host ops "
+e_hostops:	.asciz "PHI_GGML_HOSTOPS"
+s_hostops_on:	.asciz "the small operations of a generation step run on the host's cores, in the sub-graph of the multiply before them (PHI_GGML_HOSTOPS)"
 s_no_cpu:	.asciz "no CPU device registered"
 s_no_cpu_init:	.asciz "the CPU backend would not initialise"
 s_pool1:	.asciz "the host's rows have a threadpool of their own (poll "
@@ -1816,6 +1829,140 @@ ahead_enabled:
 9:	movl ahead_on(%rip), %eax
 	ret
 
+# hostops_enabled: PHI_GGML_HOSTOPS=1 (asked once, said once); eax.
+hostops_enabled:
+	cmpl $-1, hostops_on(%rip)
+	jne 9f
+	subq $8, %rsp
+	leaq e_hostops(%rip), %rdi
+	xorl %esi, %esi
+	call env_u64
+	testl %eax, %eax
+	setnz %al
+	movzbl %al, %eax
+	movl %eax, hostops_on(%rip)
+	testl %eax, %eax
+	jz 1f
+	leaq s_hostops_on(%rip), %rsi
+	call say
+1:	addq $8, %rsp
+9:	movl hostops_on(%rip), %eax
+	ret
+
+# host_op(edi op): 1 for an operation the host's cores take off a GPU at
+# a generation step: arithmetic by element, the norms, the routing of a
+# mixture (soft max, top k, the rows gathered, their sum), copies.
+host_op:
+	.irp op, ADD, SUB, MUL, DIV, SQR, SQRT, SCALE, NORM, RMS_NORM, L2_NORM, SOFT_MAX, ARGSORT, TOP_K, SUM_ROWS, CONCAT, REPEAT, GET_ROWS, CONT, CPY, UNARY, CLAMP, ROPE, GLU, MUL_MAT
+	cmpl $GGML_OP_\op, %edi
+	je 1f
+	.endr
+	xorl %eax, %eax
+	ret
+1:	movl $1, %eax
+	ret
+
+# supports_hostop(rdi node): under PHI_GGML_HOSTOPS, an operation of
+# host_op whose result is a generation step's: no dimension past the
+# first over HOSTOP_DIM, at most HOSTOP_ELEMS elements. eax.
+supports_hostop:
+	pushq %rbx
+	movq %rdi, %rbx
+	call hostops_enabled
+	testl %eax, %eax
+	jz 9f
+	movl T_OP(%rbx), %edi
+	call host_op
+	testl %eax, %eax
+	jz 9f
+	xorl %eax, %eax
+	movq T_NE(%rbx), %rcx
+	.irp d, 8, 16, 24
+	movq T_NE+\d(%rbx), %rdx
+	cmpq $HOSTOP_DIM, %rdx
+	ja 9f
+	imulq %rdx, %rcx
+	.endr
+	cmpq $HOSTOP_ELEMS, %rcx
+	ja 9f
+	movl $1, %eax
+9:	popq %rbx
+	ret
+
+# host_run(rdi graph, esi i, edx n): the nodes from i up to the next
+# multiply, GLU or node with a role, computed on the private CPU backend
+# as one view of the graph (what ggml_graph_view makes: the same arrays,
+# the nodes from i, no leafs, no gradients); eax the last node it took,
+# or -1.
+host_run:
+	pushq %rbp
+	movq %rsp, %rbp
+	pushq %rbx
+	pushq %r12
+	pushq %r13
+	pushq %r14
+	subq $128, %rsp				# the view (CG_BYTES) at (%rsp)
+	.if CG_BYTES > 128
+	.error "host_run: the view does not fit its frame"
+	.endif
+	movq %rdi, %rbx
+	movl %esi, %r12d
+	movl %edx, %r13d
+	leal 1(%r12), %r14d			# j
+1:	cmpl %r13d, %r14d
+	jge 3f
+	movslq %r14d, %rcx
+	leaq role(%rip), %rax
+	cmpb $0, (%rax,%rcx)
+	jne 3f
+	movq CG_NODES(%rbx), %rax
+	movq (%rax,%rcx,8), %rdx
+	movl T_OP(%rdx), %eax
+	cmpl $GGML_OP_MUL_MAT_ID, %eax
+	je 3f
+	cmpl $GGML_OP_MUL_MAT, %eax
+	jne 2f
+	movq %rdx, %rdi
+	call supports_mul_mat
+	testl %eax, %eax
+	jnz 3f
+2:
+	incl %r14d
+	jmp 1b
+3:	movq %rsp, %rdi
+	movq %rbx, %rsi
+	movl $CG_BYTES, %edx
+	call mem_copy
+	movl $0, CG_SIZE(%rsp)
+	movl %r14d, %eax
+	subl %r12d, %eax
+	movl %eax, CG_N_NODES(%rsp)
+	movl $0, CG_N_LEAFS(%rsp)
+	movq CG_NODES(%rbx), %rax
+	movslq %r12d, %rcx
+	leaq (%rax,%rcx,8), %rax
+	movq %rax, CG_NODES(%rsp)
+	movq $0, CG_GRADS(%rsp)
+	movq $0, CG_GRAD_ACCS(%rsp)
+	movq $0, CG_LEAFS(%rsp)
+	TM TM_REST
+	movq g_cpu(%rip), %rdi
+	movq %rsp, %rsi
+	call ggml_backend_graph_compute@PLT
+	TM TM_HOSTOPS
+	testl %eax, %eax
+	jnz 8f
+	leal -1(%r14), %eax
+	jmp 9f
+8:	movl $-1, %eax
+9:	leaq -32(%rbp), %rsp
+	popq %r14
+	popq %r13
+	popq %r12
+	popq %rbx
+	popq %rbp
+	ret
+
 # time_enabled: PHI_GGML_TIME=1 (asked once); eax.
 time_enabled:
 	cmpl $-1, time_on(%rip)
@@ -1895,6 +2042,7 @@ tm_leave:
 	TM_SAY s_tm4, TM_END
 	TM_SAY s_tm5, TM_REST
 	TM_SAY s_tm6, TM_AHEAD
+	TM_SAY s_tm8, TM_HOSTOPS
 	TM_SAY s_tm7, TM_LONG
 	call l_end
 8:	popq %rax
@@ -1998,6 +2146,11 @@ run_mul_mat:
 	call ahead_enabled
 	testl %eax, %eax
 	jz 20f
+	cmpq $0, ah_first(%rip)
+	jne 101f
+	movq T_DATA(%r12), %rax
+	movq %rax, ah_first(%rip)
+101:
 	# this multiply follows the last one: remembered under that one's weight
 	movq ah_prev(%rip), %rdi
 	testq %rdi, %rdi
@@ -2115,6 +2268,12 @@ run_mul_mat:
 	cmpq %rcx, AH_X(%rax)
 	jne 30f
 	movq %rax, %r14				# the entry
+	# never the multiply a pass begins with: its node comes with the next
+	# pass only, and until then the request would hold the window (a DMA
+	# router in the same process could not fetch a prompt's weights)
+	movq AH_A(%r14), %rcx
+	cmpq ah_first(%rip), %rcx
+	je 30f
 	movq T_NE+8(%r13), %rax			# the activations' bytes: n * nb_b, kept for the check
 	imulq T_NB+8(%r13), %rax
 	cmpq $AH_COPY_MAX, %rax
@@ -2833,11 +2992,27 @@ phi_graph_compute:
 	cmpl $GGML_OP_MUL_MAT_ID, %eax
 	je 52f
 	cmpl $GGML_OP_GLU, %eax
-	je 55f
+	jne 58f
+	cmpl $0, hostops_on(%rip)		# under PHI_GGML_HOSTOPS a GLU is one of the host's run
+	jle 55f
+58:
 	movl %eax, %edi
 	call is_view
 	testl %eax, %eax
 	jnz 7f
+	movl T_OP(%r14), %edi
+	call host_op
+	testl %eax, %eax
+	jz 56f
+59:	movq %rbx, %rdi				# a run of them, to the next multiply the cards take
+	movl %r13d, %esi
+	movl %r12d, %edx
+	call host_run
+	testl %eax, %eax
+	js 92f
+	movl %eax, %r13d
+	jmp 7f
+56:
 	call say_begin
 	leaq s_unsupported(%rip), %rsi
 	call w_str
@@ -2847,7 +3022,13 @@ phi_graph_compute:
 	call w_str
 	call l_end
 	jmp 92f
-51:	movq %r14, %rdi
+51:	cmpl $0, hostops_on(%rip)
+	jle 511f
+	movq %r14, %rdi
+	call supports_mul_mat
+	testl %eax, %eax
+	jz 59b					# the host keeps every row: with the run
+511:	movq %r14, %rdi
 	call run_mul_mat
 	testl %eax, %eax
 	jnz 92f
@@ -3004,6 +3185,9 @@ phi_dev_buffer_from_host_ptr:
 phi_dev_supports_op:
 	pushq %rbp
 	movq %rsp, %rbp
+	pushq %rbx
+	subq $8, %rsp
+	movq %rsi, %rbx
 	movq %rsi, %rdi
 	movl T_OP(%rdi), %eax
 	cmpl $GGML_OP_MUL_MAT, %eax
@@ -3014,13 +3198,30 @@ phi_dev_supports_op:
 	je 3f
 	movl %eax, %edi
 	call is_view
+	testl %eax, %eax
+	jnz 9f
+	movq %rbx, %rdi
+	call supports_hostop
 	jmp 9f
 1:	call supports_mul_mat
+	testl %eax, %eax
+	jnz 9f
+	movq T_SRC(%rbx), %rcx			# the host keeps every row: with its neighbours, when its matrix is a weight
+	cmpq $0, T_BUFFER(%rcx)
+	je 9f
+	movq %rbx, %rdi
+	call supports_hostop
 	jmp 9f
 2:	call supports_mul_mat_id
 	jmp 9f
 3:	call supports_glu
-9:	popq %rbp
+	testl %eax, %eax
+	jnz 9f
+	movq %rbx, %rdi				# not a fused block's: a small one, for the host's cores
+	call supports_hostop
+9:	addq $8, %rsp
+	popq %rbx
+	popq %rbp
 	ret
 
 # phi_dev_supports_buft(dev rdi, buft rsi): a host buffer.
@@ -3141,6 +3342,7 @@ ggml_backend_phi_reg:
 	movl $-1, verbose_on(%rip)
 	movl $-1, ahead_on(%rip)
 	movl $-1, time_on(%rip)
+	movl $-1, hostops_on(%rip)
 1:	call tables_init
 	leaq phi_reg(%rip), %rbx
 	movl $GGML_BACKEND_API_VERSION, REG_API_VERSION(%rbx)

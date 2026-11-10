@@ -20,7 +20,7 @@ built a library llama.phi would not load).
 | group | symbols |
 | --- | --- |
 | `struct ggml_tensor` | `T_BYTES`, `T_TYPE`, `T_BUFFER`, `T_NE`, `T_NB`, `T_OP`, `T_OP_PARAMS`, `T_FLAGS`, `T_SRC`, `T_VIEW_SRC`, `T_DATA`, `T_NAME`, `GGML_MAX_SRC` |
-| `struct ggml_cgraph` | `CG_N_NODES`, `CG_NODES` |
+| `struct ggml_cgraph` | `CG_N_NODES`, `CG_NODES`; its size and `CG_SIZE`, `CG_N_LEAFS`, `CG_GRADS`, `CG_GRAD_ACCS`, `CG_LEAFS` for the view `host_run` makes (`glue.md`, "Small operations on the host") |
 | buffers | `BUF_BUFT` |
 | `struct ggml_backend_reg` and its interface | `REG_BYTES`, `REG_API_VERSION`, `REG_IFACE`, `REG_CONTEXT`; `REG_I_BYTES` and the slots `REG_I_GET_NAME`, `REG_I_GET_DEVICE_COUNT`, `REG_I_GET_DEVICE`, `REG_I_GET_PROC_ADDRESS` |
 | `struct ggml_backend_device` and its interface | `DEV_BYTES`, `DEV_IFACE`, `DEV_REG`, `DEV_CONTEXT`; `DEV_I_BYTES` and every slot from `get_name` to the three event functions |

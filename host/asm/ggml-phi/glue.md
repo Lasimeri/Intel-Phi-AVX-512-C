@@ -153,6 +153,21 @@ time unchanged: the time between its multiplies is what shrank, about
 the count was last said. The two sets were not interleaved, and their
 ranges touch (24.791 and 24.802 s).
 
+**Never across a pass (2026-11-10).** A request begun ahead holds the
+window's doorbell lock until its node takes it or the next multiply
+drains it. The multiply that follows a pass's last one (the output
+head) is the first of the next pass, and it was begun ahead whenever
+the two happened to read activations at the same address: an address
+ggml's allocator may give to two unrelated tensors. Nothing then came
+for the request until the next token; with a DMA router in the process
+(`back_or_drop`), a prompt arriving first needed the lock to fetch its
+weights and waited for ever (seen 2026-11-10 on a 35 B model once the
+host's small operations had changed the buffer layout: the lock byte 1,
+the request and reply sequence numbers equal, one thread spinning).
+`ah_first` is the weight of the first multiply the backend ever ran,
+the one a pass begins with; a successor with that weight is never
+begun.
+
 ## The timeline (`PHI_GGML_TIME`, 2026-11-10)
 
 `PHI_GGML_TIME=1` has the backend account for a generation's time as it
@@ -168,11 +183,12 @@ sit right after a call or before one, where no flag is live:
 | end | `phi_ggml_end` and its kin: the wait for the cards after the host's rows are done, their rows gathered |
 | rest | the scan of the graph, a drain, the bookkeeping; closed by `tm_leave` at the exit |
 | issued ahead | the activations kept and the request begun for a multiply issued ahead of its node |
+| host ops | a run of small operations and of multiplies the host keeps whole (`PHI_GGML_HOSTOPS`, below) |
 | long gaps | an outside gap of more than 20 ms (between requests, a prompt on a GPU), kept apart so it does not drown the rest |
 
 `tm_leave` prints one line every 8192 sub-graphs, the sums since the
 start in microseconds (`time: N sub-graphs; us outside X, issue X, host
-rows X, end X, rest X, issued ahead X; outside gaps over 20 ms X`); the
+rows X, end X, rest X, issued ahead X, host ops X; outside gaps over 20 ms X`); the
 difference of two lines is an interval. Off, a mark is one compare and
 a jump.
 
@@ -200,6 +216,86 @@ The run-ahead on that model and layout, 220 tokens, three prompts: 7.529,
 `PHI_GGML_AHEAD=1`, the output identical; the card busy 60.3 % of the
 time before and 71.0 % after (sampled from the host); 16,384 multiplies
 taken ahead, 81 begun ahead that were not what came.
+
+## Small operations on the host (`PHI_GGML_HOSTOPS`, 2026-11-10)
+
+ggml's scheduler gives a node that has no weight to the backend of the
+node before it in the graph, when that backend accepts it
+(`ggml-backend.cpp`, the passes that expand an assignment down and up;
+every backend but the last, the CPU, expands alike). This backend
+accepted multiplies only, so with every layer's context on a GPU
+(`-ngl 99 -ot ".*=CPU"`) each norm, residual add, routing soft max and
+SwiGLU of a generated token went to the GPU and came back: the graph of
+one token of a 35 B mixture-of-experts model was cut into 612 splits
+(llama-server at `-lv 4`: `sched_graph_realloc: ... nodes = 5015,
+splits = 612`).
+
+`PHI_GGML_HOSTOPS=1` has `phi_dev_supports_op` also accept
+(`supports_hostop`):
+
+| what | condition |
+| --- | --- |
+| `ADD SUB MUL DIV SQR SQRT SCALE NORM RMS_NORM L2_NORM SOFT_MAX ARGSORT TOP_K SUM_ROWS CONCAT REPEAT GET_ROWS CONT CPY UNARY CLAMP ROPE` (`host_op`) | the result is a generation step's: no dimension past the first over 31 (`HOSTOP_DIM`: a prompt's tensors carry their tokens there and stay with the GPU), at most 1,048,576 elements |
+| a `GLU` that `supports_glu` declines (not a fused block's) | the same |
+| a `MUL_MAT` that `supports_mul_mat` declines (the host keeps every row of it) | the same, and its matrix is a weight (it has a buffer when the scheduler asks) |
+
+The last line matters as much as the first: declined, such a multiply
+went to ggml's own CPU backend and cut the chain there.
+
+`phi_graph_compute` runs these as a run (`host_run`): from the node to
+the next multiply the cards take, mixture multiply or node with a role,
+one view of the graph (the graph's structure copied, `size` 0, the node
+count, the nodes from that place, no leafs and no gradients: what
+`ggml_graph_view` makes, which ggml does not export) computed on the
+private CPU backend. `tools/ggml-layout-check.c` gives the structure's
+size and fields (`CG_BYTES` 96) and the operations' numbers.
+
+Two norms a layer stay with the GPU whatever this backend accepts:
+llama.cpp pins them to the layer's device. A preload library declines
+that pin for a generation step's norm (`tools/unpin.c` in
+Lasimeri/llama-phi).
+
+Measured on a 35 B Q6_K model, card 0 (a 7120A) holding half of every
+dense matrix's rows and 119 whole experts of each layer's 256, an RTX
+3090 Ti holding the context, one generated token's graph:
+
+| | splits |
+| --- | --- |
+| the switch off | 612 |
+| the element-wise operations only | 702 |
+| with the SwiGLU, and the norms unpinned | 543 |
+| and the multiplies the host keeps whole | 393 |
+
+A linear-attention layer is then four sub-graphs of this backend with a
+GPU sub-graph between each pair (the convolution, the attention's core
+and its state): the mixed projection; the convolution's results, alpha,
+the gate, beta; `z`; and one of 49 nodes from the attention's output
+through the residual, the norm, the routing, the experts' gate and up,
+the SwiGLU, down, their weighted sum, the shared expert and its gate to
+the next layer's norm.
+
+Generation, 220 tokens, three prompts: 10.60, 10.37, 10.51 tok/s with
+the switch off, 10.93, 10.77, 11.04 with it and the norms unpinned. The
+timeline of that run, uploads left out: the host's rows 29.5 %, the wait
+for the card 28.8 %, the host's small operations and whole multiplies
+24.4 %, outside the backend 16.6 % (44.9 % before, which counted the
+whole multiplies then run by ggml's CPU backend). Two variants measured
+the same and were not kept: the segments that hold no multiply on a
+second CPU backend of one thread (10.74, 10.87, 10.80), and the private
+pool polling instead of sleeping (10.87, 10.61, 10.75).
+
+What was checked of the results, with float32 activations
+(`PHI_GGML_ACT=0`) so that the card's and the host's rows differ only by
+their kernels, temperature 0, 24 tokens with their top five
+log-probabilities, the switch on against off: a dense 27 B Q4_0 model,
+24 of 24 tokens the same, the chosen token's log-probability at most
+0.0156 apart; the 35 B model, 24 of 24 the same, at most 0.0638 apart.
+Two builds of one card kernel that differ in the order of a row's
+additions were 0.0106 apart on that 27 B model (2026-11-09). The
+results are not bit-equal: a norm or an add on the host rounds
+differently from the GPU's. Why the mixture model shows more is not
+established (its routing picks eight experts of 256 a layer, and a
+score's last bits can change the eighth).
 
 ## The host's rows
 

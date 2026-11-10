@@ -62,6 +62,11 @@ result before; a guess that is wrong is dropped and costs no result:
 `PHI_GGML_TIME` (1: the backend accounts for a generation's time by
 phase, a line every 8192 sub-graphs: outside the backend, issuing, the
 host's rows, the wait for the cards; `host/asm/ggml-phi/glue.md`),
+`PHI_GGML_HOSTOPS` (1: the small operations of a generation step, and
+the multiplies the host keeps whole, run on the host in the sub-graph
+of the multiply before them, where a GPU that holds the context took
+each of them and gave it back: `host/asm/ggml-phi/glue.md`; with a
+preload library that declines llama.cpp's pin of a layer's norm),
 `PHI_GGML_JUDGE` (0: no tensor is moved by its timings; with
 `PHI_GGML_PP_ADAPT=0` the same request gives the same output),
 `PHI_GGML_HOST_THREADS` (the host's threads for its rows, 12: leave the

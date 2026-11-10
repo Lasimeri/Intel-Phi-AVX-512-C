@@ -23,6 +23,6 @@ tcc -I$L/ggml/include -I$L/ggml/src -run tools/ggml-layout-check.c host/asm/ggml
 ```
 
 `make layout-check` skips it with a note when `LLAMA_CPP_DIR` has no
-ggml headers. The table of 99 values is `ggml_layout.md`'s list; a
+ggml headers. The table of 129 values is `ggml_layout.md`'s list; a
 value the glue starts to need is added to the table and the include
 regenerated, never typed into the assembly.
