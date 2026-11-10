@@ -156,3 +156,12 @@ bytes out, copies in, copies out, added by `cdma_post` once a copy is
 posted (direction from `cdma_dir`, set by `cdma_submit` 0 and `cdma_push`
 1). The worker stores the line at `OFF_CDMA_STATS` (192) after every
 reply, beside `OFF_STATS`; phitop shows it as `card dma in, out`.
+
+## A matrix by the engine (2026-11-10)
+
+`cdma_submit_phys` had one user, the resident pool's 2 MiB chunks
+(`resident.S`). `matmul.S` now uses it for every matrix that arrives in
+the window (`engine_pull`: the pieces go straight into the frames of the
+buffer the matrix is multiplied from; `matmul.md`, "Weights straight
+from host RAM"), which makes the engine the path of every large
+transfer into the card: activations and results were already its.

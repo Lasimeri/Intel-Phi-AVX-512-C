@@ -150,3 +150,50 @@ Lengths round up to whole lines: the window's result area is whole 4 KiB
 blocks and the card's buffers keep `SLACK` past their data. Gated by
 `phi-vpu matmul-check` on the 7120A (every format ok, mixtures, up to
 four matrices, the fused feed-forward) with channel 7 up throughout.
+
+## Weights straight from host RAM (`engine_pull`, 2026-11-10)
+
+A matrix that arrives in the window (an upload, `K_UPLOAD`, or a multiply
+whose matrix is named by `a_off`, the streamed weights of the ggml
+backend) was read through the block device: `vpu_pull`, a `pread` that
+the card's kernel hands to the host daemon's DMA channels, so every
+matrix waited on host CPU time. `pull_weights` now tries the card's own
+channel first (`engine_pull`), and `vpu_pull` only when that does not
+carry it:
+
+| step | how |
+| --- | --- |
+| the destination | the buffer the matrix is multiplied from (`g_a`, or the cache entry's mapping), which `big_alloc` puts on huge pages when the card has them (`MAP_HUGE`); on 4 KiB pages the block device serves as before |
+| a piece | ends at a 2 MiB boundary of the destination (a huge page is one run of frames) or at a descriptor's 16383 lines (`ENG_PIECE`) |
+| its frame | the page is read once (a private huge page gets its frame at the first fault; a read, so no dirty line of a core lies under the engine's write), then one entry of `/proc/self/pagemap` (`eng_pm_fd`, opened at the first pull) |
+| the copy | `cdma_submit_phys(window offset, card physical address, bytes)` (`cdma.S`): the engine writes the window's bytes into the buffer's own frames; no core of the card copies, nothing of the host's takes part but its memory |
+| completion | the pieces are posted back to back (the ring holds 63) and the last is waited for (`cdma_wait`) |
+
+Any refusal (the channel down, an address or an offset that is not a
+whole line, no frame, a copy refused or not completed) answers -1 after
+the pieces in flight have landed, and the caller pulls through the block
+device. The first matrix of each kind is said once in the worker's log.
+The engine's writes are coherent with every core's cache (measured on a
+7120A: a buffer every thread had in its L2, refilled by the engine, read
+back with no stale word).
+
+Measured on card 0 (a 7120A):
+
+- `phi-vpu matmul-check --threads 114 --m 17408 --k 5120 --repeat 5`:
+  every one of its 15 format cases ok against the host reference, the
+  worker's log saying the matrices came by the engine and no line for
+  the block device. Every case uploads its matrices, so the check is a
+  check of the pulled bytes.
+- The streamed layout of the ggml backend (`PHI_GGML_STREAM=1`, a 27 B
+  Q4_0 model, 8.1 % of every matrix's rows pulled at every multiply,
+  12,352 requests a 64-token request, sampled from the host): the
+  card's pull time 27.780 s through the block device, 15.818 s by the
+  engine; its compute 1.847 and 1.852 s. Generation 1.559, 1.567, 1.536
+  tok/s before, 2.155, 2.203, 2.127 after. The host alone, the card left
+  out, gives 2.267 and 2.259: with nothing resident the same rows cross
+  the link at every token, and no transfer method removes that.
+- An upload of 10.49 GB of a 35 B Q8_0 model's rows: the server up 44 s
+  after its start, the uploads included.
+
+Not converted: the other `vpu_pull` sites (the fused feed-forward's
+descriptors, the mixture paths' small pulls), which move kilobytes.

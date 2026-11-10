@@ -198,7 +198,10 @@ the card's own path for a matrix in the window
 (`card/vpu/vpu_matmul.h`: "with a cached (a_id) or in the window
 (a_off)"; `matmul.S` grows `g_a` and pulls `m * nb_a` bytes through
 `vpu_pull`, the block device whose DMA is the stack's host channels,
-3.58 GB/s measured on the desktop link, then computes). A slice that
+3.58 GB/s measured on the desktop link, then computes; since 2026-11-10
+the worker pulls it with its own DMA engine straight into the buffer's
+frames when the buffer is on huge pages, `card/vpu/matmul.md`,
+"Weights straight from host RAM"). A slice that
 does not fit what is left of the window stays with the host
 (`stream: the window is full; ...`). Pairs (`phi_ggml_begin_id_pair`
 answers -2) and the fused feed-forward (`ffn_enabled` in `glue.S`) are

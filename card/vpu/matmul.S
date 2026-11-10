@@ -401,6 +401,172 @@ dma_pull:
 9:	popq %rbx
 	ret
 
+# ---- weights straight from host RAM (2026-11-10) ----
+
+	.set ENG_PIECE, 16383 * 64		# one descriptor's length (cdma.S, CD_LEN_MAX)
+
+	.pushsection .bss
+	.balign 8
+eng_pm_fd:	.skip 8			# /proc/self/pagemap (0: not opened yet, -1: refused)
+eng_pm:		.skip 8			# one of its entries
+eng_said:	.skip 8			# bit 0: the first matrix by the engine was said, bit 1: the first by the block device
+	.popsection
+
+# engine_pull(dst rdi, len rsi, off rdx): len bytes (whole 64-byte lines)
+# of the window at off straight into dst's own page frames by the card's
+# DMA engine (cdma_submit_phys): no block device, so nothing of the
+# host's but its memory takes part, and no copy by a core of the card.
+# dst must lie in a huge-page mapping (big_alloc, MAP_HUGE): a huge page
+# is one run of frames, so a piece ends at a 2 MiB boundary of dst or at
+# a descriptor's 16383 lines. Each piece's page is read once first (a
+# private huge page gets its frame at the first fault; a read, so that
+# no dirty line of a core waits under the engine's write) and the frame
+# comes from /proc/self/pagemap. The pieces are posted back to back (the
+# ring holds 63) and the last is waited for. eax 0, or -1 when the
+# engine does not carry it: the channel down, an address or an offset
+# that is not a whole line, no frame, a copy refused or not completed
+# (pieces in flight are waited for before the answer, so the caller may
+# fill the buffer another way).
+engine_pull:
+	pushq %rbx
+	pushq %r12
+	pushq %r13
+	pushq %r14
+	pushq %r15
+	pushq %rbp
+	xorl %ebp, %ebp				# the last piece's sequence number
+	cmpq $0, cdma_ready(%rip)
+	je 8f
+	movq %rdi, %rax
+	orq %rdx, %rax
+	testq $63, %rax
+	jnz 8f
+	movq %rdi, %rbx				# dst
+	leaq 63(%rsi), %r12
+	andq $-64, %r12				# whole lines
+	movq %rdx, %r13				# the window offset
+	movq eng_pm_fd(%rip), %rax
+	testq %rax, %rax
+	jg 1f
+	js 8f
+	leaq s_eng_pagemap(%rip), %rdi
+	movl $O_RDONLY, %esi
+	xorl %edx, %edx
+	SYS SYS_open
+	testq %rax, %rax
+	jg 0f
+	movq $-1, eng_pm_fd(%rip)
+	jmp 8f
+0:	movq %rax, eng_pm_fd(%rip)
+1:	xorl %r14d, %r14d			# done
+2:	cmpq %r12, %r14
+	jae 6f
+	leaq (%rbx,%r14), %r15			# this piece
+	movq %r15, %rax
+	orq $HUGE_BYTES - 1, %rax
+	incq %rax
+	subq %r15, %rax				# to the end of its huge page
+	movq %r12, %rdx
+	subq %r14, %rdx
+	cmpq %rax, %rdx
+	jbe 3f
+	movq %rax, %rdx
+3:	cmpq $ENG_PIECE, %rdx
+	jbe 4f
+	movq $ENG_PIECE, %rdx
+4:	pushq %rdx
+	movzbl (%r15), %eax			# the page has its frame
+	movq eng_pm_fd(%rip), %rdi
+	leaq eng_pm(%rip), %rsi
+	movl $8, %edx
+	movq %r15, %r10
+	shrq $12, %r10
+	shlq $3, %r10				# the entry's offset
+	SYS SYS_pread64
+	popq %rdx
+	cmpq $8, %rax
+	jne 7f
+	movq eng_pm(%rip), %rsi
+	btq $63, %rsi
+	jnc 7f
+	movabsq $(1 << 55) - 1, %rax
+	andq %rax, %rsi
+	jz 7f					# a zero frame: never a DMA to physical 0
+	shlq $12, %rsi
+	movq %r15, %rax
+	andq $4095, %rax
+	orq %rax, %rsi				# the piece's card physical address
+	leaq (%r13,%r14), %rdi
+	pushq %rdx
+	call cdma_submit_phys
+	popq %rdx
+	testq %rax, %rax
+	jz 7f
+	movq %rax, %rbp
+	addq %rdx, %r14
+	jmp 2b
+6:	testq %rbp, %rbp
+	jz 5f					# nothing asked for
+	movq %rbp, %rdi
+	call cdma_wait
+	testl %eax, %eax
+	jz 8f
+5:	xorl %eax, %eax
+	jmp 9f
+7:	testq %rbp, %rbp
+	jz 8f
+	movq %rbp, %rdi
+	call cdma_wait
+8:	movl $-1, %eax
+9:	popq %rbp
+	popq %r15
+	popq %r14
+	popq %r13
+	popq %r12
+	popq %rbx
+	ret
+
+# pull_weights(dst rdi, len rsi, off rdx, mapping rcx): a matrix out of
+# the window into dst, the start of the mapping: by the engine into the
+# mapping's frames when it is on huge pages (engine_pull), through the
+# block device when it is not or when the engine did not carry it. The
+# first of each kind is said in the log. eax 0, or -1.
+pull_weights:
+	cmpq $0, MAP_HUGE(%rcx)
+	je 2f
+	pushq %rdi
+	pushq %rsi
+	pushq %rdx
+	call engine_pull
+	popq %rdx
+	popq %rsi
+	popq %rdi
+	testl %eax, %eax
+	jnz 2f
+	btsq $0, eng_said(%rip)
+	jc 1f
+	call l_begin
+	leaq s_eng_on(%rip), %rsi
+	call w_str
+	movl $1, %edi
+	call l_end
+1:	xorl %eax, %eax
+	ret
+2:	btsq $1, eng_said(%rip)
+	jc 3f
+	pushq %rdi
+	pushq %rsi
+	pushq %rdx
+	call l_begin
+	leaq s_eng_off(%rip), %rsi
+	call w_str
+	movl $1, %edi
+	call l_end
+	popq %rdx
+	popq %rsi
+	popq %rdi
+3:	jmp vpu_pull
+
 # ctrl_read(dst rdi, src rsi, len rdx): a descriptor out of the control
 # area in whole 64-byte vector loads (the area is uncached: every load is
 # a round trip over the link; a byte-wise copy would be sixteen for a
@@ -1690,7 +1856,8 @@ vpu_matmul_run:
 	movq CE_MAP + MAP_P(%r13), %rdi
 	movq %r12, %rsi
 	movq MM_A_OFF(%rbx), %rdx
-	call vpu_pull
+	leaq CE_MAP(%r13), %rcx
+	call pull_weights
 	testl %eax, %eax
 	jz 41f
 	leaq CE_MAP(%r13), %rdi
@@ -1848,7 +2015,8 @@ vpu_matmul_run:
 	movq g_a + BUF_MAP + MAP_P(%rip), %rdi
 	movq %r12, %rsi
 	movq MM_A_OFF(%rbx), %rdx
-	call vpu_pull
+	leaq g_a + BUF_MAP(%rip), %rcx
+	call pull_weights
 	testl %eax, %eax
 	jnz .Lpull
 	movq g_a + BUF_MAP + MAP_P(%rip), %rax
@@ -3336,6 +3504,9 @@ r_i:	.skip 8
 stat_dma_push:	.skip 8			# result pushes carried by the DMA channel (push_data)
 
 	.section .rodata
+s_eng_pagemap:	.asciz "/proc/self/pagemap"
+s_eng_on:	.asciz "matmul: a matrix in the window comes by the card's DMA engine straight into its buffer's frames (no block device)"
+s_eng_off:	.asciz "matmul: a matrix in the window came through the block device (4 KiB pages, or the engine did not carry it)"
 s_upload:	.asciz "matmul: upload id "
 s_comma:	.asciz ", "
 s_bytes:	.asciz " bytes"
